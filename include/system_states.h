@@ -1,0 +1,21 @@
+#ifndef SYSTEM_STATES_H
+#define SYSTEM_STATES_H
+
+enum SystemState {
+    STATE_WATCHFACE,
+    STATE_MENU_HR,
+    STATE_MENU_SETTINGS,
+    STATE_MENU_FORCE_SLEEP,
+    STATE_EXECUTING_HR,
+    STATE_CHARGING,
+    STATE_AOD
+};
+
+enum PowerMode {
+    POWER_ACTIVE,
+    POWER_IDLE,
+    POWER_AOD,
+    POWER_DEEP_SLEEP
+};
+
+#endif // SYSTEM_STATES_H

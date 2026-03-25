@@ -186,7 +186,7 @@ void ui_manager_update() {
         else if (current_state == STATE_WATCHFACE) {
             if (aod_allowed) { is_dimmed_aod = true; display_hal_backlight_set(15); last_rendered_state = (AppState)-1; last_min_val = -1; }
             else { power_manager_enter_deep_sleep(); }
-        } else if (current_state != STATE_EXEC_STOPWATCH && current_state != STATE_EXEC_TIMER) {
+        } else if (current_state != STATE_EXEC_STOPWATCH && current_state != STATE_EXEC_TIMER && current_state != STATE_EXEC_HR) {
             if (!aod_allowed) power_manager_enter_deep_sleep();
             else { is_dimmed_aod = true; display_hal_backlight_set(15); current_state = STATE_WATCHFACE; nd = true; }
         }

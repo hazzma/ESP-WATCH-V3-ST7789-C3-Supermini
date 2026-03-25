@@ -21,15 +21,18 @@ Firmware untuk Smartwatch berbasis **ESP32-C3 Super Mini** dengan layar **ST7789
 | | Backlight | 10 |
 | **I2C (Shared)** | SDA | 8 |
 | | SCL | 9 |
-| **Input** | Main Button | 7 |
-| | Wake Button | 5 |
+| **Input** | Main Button (Left) | 7 |
+| | Wake Button (Right) | 5 |
 | **Battery** | ADC Read | 3 |
 
 ## Cara Penggunaan
-1.  **Navigasi**: Tekan tombol (GPIO 7) untuk berpindah menu (Watchface -> Heart Rate -> AOD Setting -> System Sleep).
-2.  **Heart Rate**: Masuk ke menu Heart Rate, tahan tombol (Long Hold) untuk mulai mengukur.
-3.  **AOD**: Aktifkan melalui menu AOD Setting. Jam akan meredup otomatis setelah 1 menit tidak ada aktivitas.
-4.  **Deep Sleep**: Masuk ke menu System, tahan tombol (Long Hold) untuk tidur total.
+1.  **Navigasi**: 
+    - Tekan **Tombol Kiri** (GPIO 7) untuk geser menu ke belakang.
+    - Tekan **Tombol Kanan** (GPIO 5) untuk geser menu ke depan.
+2.  **Select/Execute**: Tahan **Tombol Kanan** (Long Hold 0.8s) untuk memilih opsi menu.
+3.  **Heart Rate**: Masuk ke menu Heart Rate, tahan tombol kanan untuk mulai mengukur.
+4.  **AOD**: Aktifkan melalui menu AOD Setting (Tahan Tombol Kanan).
+5.  **Deep Sleep**: Masuk ke menu System, tahan tombol kanan untuk tidur total.
 5.  **Wake Up**: Tekan tombol GPIO 5 untuk membangunkan jam dari Deep Sleep.
 
 ## Persyaratan Build

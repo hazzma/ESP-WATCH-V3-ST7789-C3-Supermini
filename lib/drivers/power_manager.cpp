@@ -28,8 +28,8 @@ void power_manager_enter_deep_sleep() {
     Serial.println("[POWER] Executing Pre-Sleep sequence... // [DEBUG]");
 
     // 1. Spin-wait sampai GPIO 5 = HIGH (release guard) — RULE-006
-    pinMode(PIN_WAKE_BTN, INPUT_PULLUP);
-    while(digitalRead(PIN_WAKE_BTN) == LOW) {
+    pinMode(PIN_BTN_RIGHT, INPUT_PULLUP);
+    while(digitalRead(PIN_BTN_RIGHT) == LOW) {
         delay(1); 
     }
 
@@ -50,7 +50,7 @@ void power_manager_enter_deep_sleep() {
     ledcDetachPin(PIN_TFT_BL);
 
     // 7. esp_deep_sleep_enable_gpio_wakeup(1ULL << 5, ESP_GPIO_WAKEUP_GPIO_LOW) — RULE-006
-    esp_deep_sleep_enable_gpio_wakeup(1ULL << PIN_WAKE_BTN, ESP_GPIO_WAKEUP_GPIO_LOW);
+    esp_deep_sleep_enable_gpio_wakeup(1ULL << PIN_BTN_RIGHT, ESP_GPIO_WAKEUP_GPIO_LOW);
 
     // 8. esp_deep_sleep_start() — RULE-001
     Serial.println("[POWER] System entering Deep Sleep now. // [DEBUG]");

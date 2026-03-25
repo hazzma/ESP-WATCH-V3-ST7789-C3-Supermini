@@ -1,62 +1,64 @@
 #include "button_hal.h"
 
-// Internal state management
-static bool last_stable_state = HIGH; // HIGH = Released (Pullup)
-static bool last_raw_state = HIGH;
-static unsigned long last_debounce_time = 0;
-static unsigned long press_start_time = 0;
-static bool is_pressed = false;
+// Internal structures for dual button management
+struct ButtonState {
+    int pin;
+    bool last_raw_state;
+    bool last_stable_state;
+    unsigned long last_debounce_time;
+    unsigned long press_start_time;
+    bool is_pressed;
+};
+
+static ButtonState left_btn = { PIN_BTN_LEFT, HIGH, HIGH, 0, 0, false };
+static ButtonState right_btn = { PIN_BTN_RIGHT, HIGH, HIGH, 0, 0, false };
 
 void button_hal_init() {
-    pinMode(PIN_BTN, INPUT_PULLUP);
-    Serial.println("Button HAL: Initialized GPIO 7 (INPUT_PULLUP) // [DEBUG]");
+    pinMode(PIN_BTN_LEFT, INPUT_PULLUP);
+    pinMode(PIN_BTN_RIGHT, INPUT_PULLUP);
+    Serial.println("Button HAL: Dual button initialized (GPIO 7 & 5) // [DEBUG]");
 }
 
-ButtonEvent button_hal_read() {
-    ButtonEvent event = BTN_NONE;
-    bool raw_state = digitalRead(PIN_BTN);
+static ButtonEvent process_button(ButtonState& btn, bool is_left) {
+    ButtonEvent ev = BTN_NONE;
+    bool raw = digitalRead(btn.pin);
     unsigned long now = millis();
 
-    // Reset debounce timer if state changed
-    if (raw_state != last_raw_state) {
-        last_debounce_time = now;
+    if (raw != btn.last_raw_state) {
+        btn.last_debounce_time = now;
     }
 
-    // Process stable state
-    if ((now - last_debounce_time) > DEBOUNCE_MS) {
-        // State has been stable for long enough
-        if (raw_state != last_stable_state) {
-            last_stable_state = raw_state;
+    if ((now - btn.last_debounce_time) > DEBOUNCE_MS) {
+        if (raw != btn.last_stable_state) {
+            btn.last_stable_state = raw;
 
-            if (last_stable_state == LOW) {
-                // Button just pressed
-                press_start_time = now;
-                is_pressed = true;
-                Serial.println("Button HAL: Pressed // [DEBUG]");
-            } 
-            else {
-                // Button just released
-                if (is_pressed) {
-                    unsigned long duration = now - press_start_time;
-                    is_pressed = false;
-                    
+            if (btn.last_stable_state == LOW) {
+                btn.press_start_time = now;
+                btn.is_pressed = true;
+            } else {
+                if (btn.is_pressed) {
+                    unsigned long duration = now - btn.press_start_time;
+                    btn.is_pressed = false;
+
                     if (duration >= LONG_HOLD_MIN_MS) {
-                        event = BTN_LONG_HOLD;
-                        Serial.printf("Button HAL: Long Hold Detected (%d ms) // [DEBUG]\n", duration);
-                    } 
-                    else if (duration < SHORT_CLICK_MAX_MS) {
-                        event = BTN_SHORT_CLICK;
-                        Serial.printf("Button HAL: Short Click Detected (%d ms) // [DEBUG]\n", duration);
-                    }
-                    else {
-                        // Duration was in between Short and Long - Spec says return BTN_NONE
-                        Serial.printf("Button HAL: Released, duration in deadzone (%d ms) // [DEBUG]\n", duration);
+                        ev = is_left ? BTN_LEFT_HOLD : BTN_RIGHT_HOLD;
+                    } else if (duration < SHORT_CLICK_MAX_MS) {
+                        ev = is_left ? BTN_LEFT_CLICK : BTN_RIGHT_CLICK;
                     }
                 }
             }
         }
     }
 
-    last_raw_state = raw_state;
-    return event;
+    btn.last_raw_state = raw;
+    return ev;
+}
+
+ButtonEvent button_hal_read() {
+    // Check both buttons. Priority: Logic might favor one if both released same frame.
+    ButtonEvent ev_left = process_button(left_btn, true);
+    if (ev_left != BTN_NONE) return ev_left;
+
+    ButtonEvent ev_right = process_button(right_btn, false);
+    return ev_right;
 }

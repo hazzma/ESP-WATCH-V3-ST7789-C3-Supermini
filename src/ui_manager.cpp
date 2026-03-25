@@ -93,28 +93,46 @@ void ui_manager_update() {
         last_fps_time = now;
     }
 
-    // State Machine
+    // State Machine (Dual Button Logic)
     switch (current_state) {
-        case STATE_WATCHFACE: if (bt == BTN_SHORT_CLICK) current_state = STATE_MENU_HR; break;
-        case STATE_MENU_HR:
-            if (bt == BTN_SHORT_CLICK) current_state = STATE_MENU_AOD;
-            else if (bt == BTN_LONG_HOLD) { if (max30100_hal_init()) current_state = STATE_EXEC_HR; }
+        case STATE_WATCHFACE: 
+            if (bt == BTN_RIGHT_CLICK) current_state = STATE_MENU_HR;
+            else if (bt == BTN_LEFT_CLICK) current_state = STATE_MENU_SLEEP;
             break;
+
+        case STATE_MENU_HR:
+            if (bt == BTN_RIGHT_CLICK) current_state = STATE_MENU_AOD;
+            else if (bt == BTN_LEFT_CLICK) current_state = STATE_WATCHFACE;
+            else if (bt == BTN_RIGHT_HOLD) { 
+                if (max30100_hal_init()) current_state = STATE_EXEC_HR; 
+            }
+            break;
+
         case STATE_EXEC_HR:
             max30100_hal_update();
-            if (bt == BTN_SHORT_CLICK) { max30100_hal_shutdown(); current_state = STATE_WATCHFACE; }
+            if (bt == BTN_RIGHT_CLICK || bt == BTN_LEFT_CLICK) { 
+                max30100_hal_shutdown(); 
+                current_state = STATE_WATCHFACE; 
+            }
             break;
+
         case STATE_MENU_AOD:
-            if (bt == BTN_SHORT_CLICK) current_state = STATE_MENU_SLEEP;
-            else if (bt == BTN_LONG_HOLD) { aod_allowed = !aod_allowed; current_state = STATE_WATCHFACE; }
+            if (bt == BTN_RIGHT_CLICK) current_state = STATE_MENU_SLEEP;
+            else if (bt == BTN_LEFT_CLICK) current_state = STATE_MENU_HR;
+            else if (bt == BTN_RIGHT_HOLD) { 
+                aod_allowed = !aod_allowed; 
+                current_state = STATE_WATCHFACE; 
+            }
             break;
+
         case STATE_MENU_SLEEP: 
-            if (bt == BTN_SHORT_CLICK) current_state = STATE_WATCHFACE; 
-            else if (bt == BTN_LONG_HOLD) {
-                // Enter Sleep triggered by UI
+            if (bt == BTN_RIGHT_CLICK) current_state = STATE_WATCHFACE; 
+            else if (bt == BTN_LEFT_CLICK) current_state = STATE_MENU_AOD;
+            else if (bt == BTN_RIGHT_HOLD) {
                 power_manager_enter_deep_sleep();
             }
             break;
+            
         default: break;
     }
 

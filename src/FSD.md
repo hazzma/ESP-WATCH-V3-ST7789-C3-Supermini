@@ -73,10 +73,8 @@ Saat user minta "final build", agent cukup comment semua baris bertanda `// [DEB
 | SPI (TFT) | BL | 10 | Out | MOSFET + LEDC PWM |
 | I2C | SDA | 8 | I/O | Shared bus. **Strapping pin — lihat warning** |
 | I2C | SCL | 9 | Out | Shared bus |
-| Input | BTN | 7 | In | Active LOW, EXT0 wake source |
-| ADC | B_READ | 3 | In | Battery voltage divider |
-| Input | CHRG | 0 | In | Charging detect. **Strapping pin** |
-| Input | BTN_WAKE | 5 | In | New Wake-up Button (Active LOW) |
+| Input | BTN_L | 7 | In | Nav Left (Prev Menu) |
+| Input | BTN_R | 5 | In | Nav Right (Next), Select, Wake-up |
 
 > ⚠️ **BOOT WARNING:** GPIO 0 dan GPIO 8 adalah strapping pins. Pastikan tidak ditarik LOW saat boot atau ESP32-C3 masuk Download Mode.
 
@@ -327,12 +325,11 @@ Blocker (if NO): [penjelasan]
 
 ### 7.1 Ringkasan
 
-- GPIO 7, active LOW, `INPUT_PULLUP`
-- Short click: < 400ms diukur dari press sampai release
-- Long hold: ≥ 1500ms diukur dari press sampai release
-- Semua event di-fire **setelah tombol dilepas** — tidak ada on-press action
-- Release guard: selama tombol masih LOW, tidak ada aksi apapun
-- Polling only, non-blocking, `millis()` based
+- BTN_L (GPIO 7), BTN_R (GPIO 5), active LOW, `INPUT_PULLUP`
+- Single click L: Geser menu ke kiri (Prev)
+- Single click R: Geser menu ke kanan (Next)
+- Long hold R: Select / Execute action (≥ 800ms)
+- Release guard: event di-fire setelah tombol dilepas
 
 ---
 
@@ -393,22 +390,11 @@ void max30100_hal_shutdown() {
 ### 9.1 State Machine Overview
 
 ```
-[ DEEP_SLEEP ]
-      │ (EXT0 GPIO 7)
-      ▼
-[ WATCHFACE ] ──── auto-sleep 30s ────► [ DEEP_SLEEP ]
-      │ short click
-      ▼
-[ MENU_HR ] ──── long hold ────► [ EXEC_HR ] ──── 15s / short click ────► [ WATCHFACE ]
-      │ short click
-      ▼
-[ MENU_AOD ] ──── long hold ────► toggle AOD → [ WATCHFACE ]
-      │ short click
-      ▼
-[ MENU_SLEEP ] ──── long hold ────► [ DEEP_SLEEP ]
-      │ short click
-      ▼
-[ WATCHFACE ] (wrap)
+[ WATCHFACE ] <─── BTN_L / BTN_R ───> [ MENU_HR ] <─── BTN_L / BTN_R ───> [ MENU_AOD ] 
+      │                                   │                                   │
+      │                                BTN_R_HOLD                          BTN_R_HOLD
+      │                                   ▼                                   ▼
+[ DEEP_SLEEP ] <─── BTN_R_HOLD ─── [ MENU_SLEEP ]                     [ TOGGLE AOD_STATUS ]
 ```
 
 ### 9.2 Watchface Elements

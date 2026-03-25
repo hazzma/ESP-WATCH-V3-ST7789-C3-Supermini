@@ -5,8 +5,10 @@
 
 typedef enum { 
     BTN_NONE, 
-    BTN_SHORT_CLICK, 
-    BTN_LONG_HOLD 
+    BTN_LEFT_CLICK, 
+    BTN_LEFT_HOLD,
+    BTN_RIGHT_CLICK, 
+    BTN_RIGHT_HOLD 
 } ButtonEvent;
 
 /**
@@ -16,7 +18,6 @@ void button_hal_init();
 
 /**
  * @brief Polling function to read button events.
- * Fire events on RELEASE only.
- * @return ButtonEvent { BTN_NONE, BTN_SHORT_CLICK, BTN_LONG_HOLD }
+ * @return ButtonEvent
  */
 ButtonEvent button_hal_read();

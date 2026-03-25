@@ -1,8 +1,12 @@
-#ifndef ASSETS_ICONS_H
-#define ASSETS_ICONS_H
+#pragma once
+#include <pgmspace.h>
+#include <stdint.h>
 
-#include <Arduino.h>
+// Charging bolt icon — 16x16, RGB565, PROGMEM
+const uint16_t* assets_get_icon_charging();
 
-extern const uint16_t icon_charging_bolt[] PROGMEM;
+// Battery icon — 16x16, RGB565, PROGMEM
+const uint16_t* assets_get_icon_battery();
 
-#endif // ASSETS_ICONS_H
+uint16_t assets_get_icon_width();   // All icons 16x16
+uint16_t assets_get_icon_height();

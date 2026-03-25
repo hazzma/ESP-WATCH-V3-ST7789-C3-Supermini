@@ -1,16 +1,36 @@
-#ifndef DISPLAY_HAL_H
-#define DISPLAY_HAL_H
+#pragma once
 
 #include <Arduino.h>
 #include <TFT_eSPI.h>
-#include "config_pins.h"
 
-extern TFT_eSPI tft;
+/**
+ * @brief Initialize the display hardware and driver.
+ * Follows RULE-002: No blocking delays.
+ */
+void display_hal_init();
 
-void display_init();
-void display_set_brightness(uint8_t brightness); // 0-255
-void display_fade_in(uint16_t duration_ms);
-void display_fade_out(uint16_t duration_ms);
-void display_all_off();
+/**
+ * @brief Set the backlight brightness level.
+ * @param brightness PWM value (0-255).
+ */
+void display_hal_backlight_set(uint8_t brightness);
 
-#endif // DISPLAY_HAL_H
+/**
+ * @brief Fade in the backlight from current value to target.
+ * @param target Target brightness (0-255).
+ * @param duration_ms Total fade time.
+ * Follows RULE-002: Non-blocking using task/millis logic.
+ */
+void display_hal_backlight_fade_in(uint8_t target, int duration_ms);
+
+/**
+ * @brief Fade out the backlight and detach LEDC.
+ * Follows RULE-005: Set LOW and detach to prevent current leak.
+ */
+void display_hal_backlight_fade_out();
+
+/**
+ * @brief Get reference to the TFT_eSPI instance.
+ * @return TFT_eSPI&
+ */
+TFT_eSPI& display_hal_get_tft();

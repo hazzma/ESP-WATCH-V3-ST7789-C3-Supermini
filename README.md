@@ -1,29 +1,44 @@
-# ESP WATCH V3 ST7789 C3 Supermini - Version 1.0
+# ESP32-C3 Smartwatch v3 (ST7789)
 
-Smartwatch firmware project for ESP32-C3 with ST7789 display, BMI160 IMU, and MAX30100 Heart Rate Sensor.
+Firmware untuk Smartwatch berbasis **ESP32-C3 Super Mini** dengan layar **ST7789 240x280**. Proyek ini difokuskan pada efisiensi daya (Deep Sleep), performa UI yang halus (Sprite-based), dan fitur kesehatan dasar.
 
-## 🛠 Features Implemented:
-- **Apple Watch Style UI**: Stacked clock design (Red hours, White minutes).
-- **Persistent Wallpaper**: Background stays across menus.
-- **Improved Deep Sleep**: Uses native ESP-IDF `esp_deep_sleep_enable_gpio_wakeup` for Pin 7.
-- **AOD Mode**: Always-On Display with 40MHz CPU scaling and reduced brightness.
-- **Lazy-Load Sensors**: MAX30100 is only initialized when the Heart Rate menu is active to prevent boot hangs.
-- **Battery Monitoring**: ADC reading with non-linear percentage calculation.
+## Fitur Utama
+- **Always-On Display (AOD)**: Tampilan redup hemat daya dengan Burst Refresh (80MHz Burst / 10MHz Idle).
+- **Smooth UI**: Rendering berbasis Sprite untuk menghindari kedipan (flicker-free).
+- **Power Management**: 
+    - DFS (Dynamic Frequency Scaling): 160MHz (Render), 80MHz (Idle), 40MHz/10MHz (AOD).
+    - Deep Sleep: Konsumsi daya ultra-rendah dengan bangun via tombol GPIO 5.
+- **Health Tracking**: Integrasi sensor MAX30100 untuk detak jantung (BPM) dan SpO2.
+- **Battery Monitoring**: Pembacaan voltase baterai real-time.
 
-## ⚠️ Known Bugs in V1.0:
+## Pinout (ESP32-C3 Super Mini)
+| Perangkat | Komponen | GPIO |
+| :--- | :--- | :--- |
+| **Layar (SPI)** | MOSI | 6 |
+| | SCK | 4 |
+| | DC | 2 |
+| | RST | 1 |
+| | Backlight | 10 |
+| **I2C (Shared)** | SDA | 8 |
+| | SCL | 9 |
+| **Input** | Main Button | 7 |
+| | Wake Button | 5 |
+| **Battery** | ADC Read | 3 |
 
-### 1. Cold Boot "Black Screen" Bug (Hardware Strapping)
-- **Problem**: When power is first applied (USB/Battery), the screen remains black. The device requires a physical **RESET** button press to start.
-- **Root Cause**: ESP32-C3 samples GPIO 9 at power-on. Since GPIO 8/9 are used for I2C, electrical leakage or capacitance from the sensors pulls GPIO 9 LOW during the power-up ramp, forcing the chip into "Download Mode".
-- **Temporary Fix**: Press the Reset button after plugging in.
-- **Future Hardware Fix**: Move I2C to non-strapping pins (e.g., GPIO 5, 20, 21) or use stronger external 3.3V pull-ups (1k-2.2k ohm).
+## Cara Penggunaan
+1.  **Navigasi**: Tekan tombol (GPIO 7) untuk berpindah menu (Watchface -> Heart Rate -> AOD Setting -> System Sleep).
+2.  **Heart Rate**: Masuk ke menu Heart Rate, tahan tombol (Long Hold) untuk mulai mengukur.
+3.  **AOD**: Aktifkan melalui menu AOD Setting. Jam akan meredup otomatis setelah 1 menit tidak ada aktivitas.
+4.  **Deep Sleep**: Masuk ke menu System, tahan tombol (Long Hold) untuk tidur total.
+5.  **Wake Up**: Tekan tombol GPIO 5 untuk membangunkan jam dari Deep Sleep.
 
-### 2. MAX30100 Integration
-- **Status**: Library switched to `MAX30100_PulseOximeter.h` (Oxullo) to match working test snippets.
-- **Notice**: If initialization fails, check if the sensor is supplied with 5V or 3.3V correctly, as some modules require 5V for the IR LED.
+## Persyaratan Build
+- **PlatformIO**
+- **Framework**: Arduino
+- **Platform**: `espressif32@6.4.0`
+- **Library**:
+    - `bodmer/TFT_eSPI` (Konfigurasi pin ada di `platformio.ini`)
+    - `oxullo/MAX30100lib`
 
-## 🚀 Build Instructions:
-- Platform: PlatformIO
-- Framework: Arduino
-- Board: esp32-c3-devkitm-1
-- Platform version: espressif32@6.4.0
+---
+*Developed with love for ESP32-C3 Enthusiasts.*

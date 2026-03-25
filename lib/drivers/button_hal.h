@@ -1,17 +1,22 @@
-#ifndef BUTTON_HAL_H
-#define BUTTON_HAL_H
+#pragma once
 
 #include <Arduino.h>
-#include "config_pins.h"
+#include "app_config.h"
 
-enum ButtonEvent {
-    BTN_NONE,
-    BTN_SHORT_CLICK,
-    BTN_LONG_HOLD
-};
+typedef enum { 
+    BTN_NONE, 
+    BTN_SHORT_CLICK, 
+    BTN_LONG_HOLD 
+} ButtonEvent;
 
-void button_init();
-ButtonEvent button_update();
-bool button_is_pressed();
+/**
+ * @brief Initialize button GPIO with internal pullup.
+ */
+void button_hal_init();
 
-#endif // BUTTON_HAL_H
+/**
+ * @brief Polling function to read button events.
+ * Fire events on RELEASE only.
+ * @return ButtonEvent { BTN_NONE, BTN_SHORT_CLICK, BTN_LONG_HOLD }
+ */
+ButtonEvent button_hal_read();

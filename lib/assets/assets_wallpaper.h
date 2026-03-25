@@ -1,8 +1,10 @@
-#ifndef ASSETS_WALLPAPER_H
-#define ASSETS_WALLPAPER_H
+#pragma once
+#include <pgmspace.h>
+#include <stdint.h>
 
-#include <Arduino.h>
+// Watchface background — 240x280, RGB565, PROGMEM
+const uint16_t* assets_get_wallpaper(
 
-extern const uint16_t wallpaper_main[67200];
-
-#endif // ASSETS_WALLPAPER_H
+);
+uint16_t assets_get_wallpaper_width();
+uint16_t assets_get_wallpaper_height();

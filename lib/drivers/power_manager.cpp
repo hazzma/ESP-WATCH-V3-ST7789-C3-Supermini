@@ -59,8 +59,19 @@ void power_manager_enter_deep_sleep() {
 }
 
 float power_manager_read_battery_voltage() {
-    // Formula: (analogRead(PIN_BATT_ADC) / 4095.0) * 3.3 * 2.0
     int raw = analogRead(PIN_VBAT_ADC);
     float voltage = (raw / 4095.0f) * 3.3f * 2.0f;
     return voltage;
+}
+
+// Persist Auto Sleep Timeout (Default: 15s)
+static RTC_DATA_ATTR uint32_t auto_sleep_sec = 15;
+
+void power_manager_set_auto_sleep_timeout(uint32_t seconds) {
+    auto_sleep_sec = seconds;
+    Serial.printf("[POWER] Auto-Sleep set to %d seconds // [DEBUG]\n", seconds);
+}
+
+uint32_t power_manager_get_auto_sleep_timeout() {
+    return auto_sleep_sec;
 }

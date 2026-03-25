@@ -9,7 +9,7 @@
 
 // Persist - RTC_DATA_ATTR so brightness stays after sleep
 static RTC_DATA_ATTR bool aod_allowed = false; 
-static RTC_DATA_ATTR int brightness_ui_val = 127; // Default 50%
+static RTC_DATA_ATTR int brightness_ui_val = 127; 
 static AppState current_state = STATE_WATCHFACE;
 
 // Runtime
@@ -59,9 +59,7 @@ void ui_manager_init() {
     
     // SYNC: Apply current brightness at start
     display_hal_backlight_set(brightness_ui_val);
-    
     render_current_state();
-    // Use the saved brightness for fade in if entering from cold boot
     display_hal_backlight_fade_in(brightness_ui_val, BL_FADE_MS);
 }
 
@@ -143,15 +141,20 @@ void ui_manager_update() {
     if (bt != BTN_NONE) {
         last_activity_time = now;
         if (is_dimmed_aod) {
-            is_dimmed_aod = false; display_hal_backlight_set(brightness_ui_val); // SYNC Back
+            is_dimmed_aod = false; display_hal_backlight_set(brightness_ui_val); 
             power_manager_set_freq(FREQ_MID); last_rendered_state = (AppState)-1; last_min_val = -1;
             bt = BTN_NONE;
         }
     }
 
-    if (aod_allowed && !is_dimmed_aod && (now - last_activity_time > AOD_TIMEOUT_MS)) {
-        if (current_state == STATE_WATCHFACE) {
+    // AUTO SLEEP LOGIC
+    uint32_t timeout_ms = power_manager_get_auto_sleep_timeout() * 1000;
+    if (timeout_ms > 0 && !is_dimmed_aod && (now - last_activity_time > timeout_ms)) {
+        if (aod_allowed && current_state == STATE_WATCHFACE) {
             is_dimmed_aod = true; display_hal_backlight_set(15); last_rendered_state = (AppState)-1; last_min_val = -1;
+        } else {
+            // No AOD? Kill it. 
+            power_manager_enter_deep_sleep();
         }
     }
 
@@ -163,7 +166,7 @@ void ui_manager_update() {
     if (bt == BTN_RIGHT_CLICK) {
         if (current_state == STATE_SET_BRIGHTNESS) { 
             brightness_ui_val += 15; if (brightness_ui_val > 255) brightness_ui_val = 255; 
-            display_hal_backlight_set(brightness_ui_val); // HARDWARE SYNC
+            display_hal_backlight_set(brightness_ui_val);
             logical_change = true; 
         }
         else if (current_state != STATE_EXEC_HR) {
@@ -177,7 +180,7 @@ void ui_manager_update() {
     } else if (bt == BTN_LEFT_CLICK) {
         if (current_state == STATE_SET_BRIGHTNESS) { 
             brightness_ui_val -= 15; if (brightness_ui_val < 0) brightness_ui_val = 0; 
-            display_hal_backlight_set(brightness_ui_val); // HARDWARE SYNC
+            display_hal_backlight_set(brightness_ui_val);
             logical_change = true; 
         }
         else if (current_state != STATE_EXEC_HR) {
@@ -195,6 +198,9 @@ void ui_manager_update() {
         else if (current_state == STATE_MENU_SLEEP) { power_manager_enter_deep_sleep(); }
         else if (current_state == STATE_MENU_BRIGHTNESS) target = STATE_SET_BRIGHTNESS;
         else if (current_state == STATE_SET_BRIGHTNESS)  target = STATE_MENU_BRIGHTNESS;
+    } else if (bt == BTN_LEFT_HOLD) {
+        // QUICK KILL SWITCH (GPIO 7)
+        power_manager_enter_deep_sleep();
     }
 
     if (target != current_state) {

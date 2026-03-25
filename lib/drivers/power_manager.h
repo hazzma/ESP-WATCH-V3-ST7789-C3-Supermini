@@ -25,4 +25,11 @@ void power_manager_enter_deep_sleep();
  */
 float power_manager_read_battery_voltage();
 
+/**
+ * @brief Manage Auto Sleep logic.
+ * @param seconds Timeout in seconds. Use 0 to disable.
+ */
+void power_manager_set_auto_sleep_timeout(uint32_t seconds);
+uint32_t power_manager_get_auto_sleep_timeout();
+
 #endif // POWER_MANAGER_H

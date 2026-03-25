@@ -1,66 +1,29 @@
-# FSD (Functional Specification Document) — ESP32-C3 Smartwatch v2.2
+# Functional Specification Document (FSD) - ESP32-C3 Smartwatch
+## Version 3.3 (Checkpoint 2 - Premium UI & Power)
 
-Dokumen spesifikasi fungsional untuk arsitektur firmware jam tangan ESP32-C3.
+### 1. Input System (LOCKED)
+- **Fast Mode**: 0ms latency on Menu/Watchface/Stopwatch.
+- **Precision Mode**: 250ms gap allowed ONLY in Timer Setup for `BTN_RIGHT_DOUBLE`.
+- **Hold**: 800ms (Always instant).
+*   **Checkpoint 2 (LOCKED)**: UI/UX finalized, AOD Anti-Sleep, Fast/Precision Switching, Ghost Protection (GPS).
+*   **Checkpoint 3 (LOCKED - CURRENT)**: **Zero-Flicker Boot & Snap-ON Wakeup**.
+    *   **Snap-ON Logic**: Fast 100% BL trigger on wake to mask HW noise.
+    *   **Double VRAM Scrubbing**: Double-redundant wallpaper rendering while hardware masked (DISPOFF).
+    *   **Insta-Masking**: 0x28 command priority to block bootloader garbage.
+    *   **Elegant Shutdown**: Breathing fade-out preserved for premium feel.
 
----
+### 2. UI Rendering & Ghost Protection (LOCKED)
+- **Ghost Protection System (GPS)**:
+  - Redraw Wallpaper 100% saat keluar dari "Black Mode" (Timer/SW/HR).
+  - Redraw Wallpaper 100% saat pindah DARI Watchface (Home) menuju Menu manapun untuk membersihkan sprite jam besar.
+  - **Menu-to-Menu**: Redraw wallpaper dinonaktifkan untuk menjaga kemulusan animasi slide (Zero Flicker).
+- **Surgical Refresh**: Update nilai Timeout/Brightness hanya memperbarui area angka di dalam sprite menggunakan `fillRect(BOX_COL)`.
 
-## 1. Spesifikasi Hardware
+### 3. Power & Sleep Management (LOCKED)
+- **AOD (Always On Display)**:
+  - Jika `aod_allowed` AKTIF: Jam tidak akan pernah masuk Deep Sleep secara otomatis. Hanya meredupkan backlight (15/255) saat timeout di Watchface.
+  - Jika masuk ke menu dari kondisi AOD, jam langsung kembali ke kecerahan normal.
+- **Deep Sleep Auto-Lock**: Hanya aktif jika `aod_allowed` MATI.
 
-| Komponen | Pin | Detail |
-|----------|-----|--------|
-| **MCU** | ESP32-C3 | Super Mini (RISC-V) |
-| **Display** | ST7789 (SPI) | 240x280 (MOSI: 6, SCK: 4, DC: 2, RST: 1) |
-| **Backlight** | GPIO 10 | PWM (Dimming supported) |
-| **I2C Bus** | Shared | SDA: 8, SCL: 9 |
-| **Sensor HR** | MAX30100 | Heart Rate & SpO2 |
-| **Input L** | **GPIO 7** | Pull-up (GND when pressed) |
-| **Input R** | **GPIO 5** | Pull-up & Wake-up source |
-| **Power** | ADC 3 | Battery Voltage monitoring |
-
----
-
-## 2. Navigasi & Input (Dual Button System)
-
-Jam tangan menggunakan sistem navigasi dua tombol yang disederhanakan:
-
-### 2.1 Tombol Kiri (GPIO 7)
-- **Klik**: Kembali ke menu sebelumnya / Kurangi nilai (Brightness).
-
-### 2.2 Tombol Kanan (GPIO 5 / Wake Button)
-- **Klik**: Lanjut ke menu berikutnya / Tambah nilai (Brightness).
-- **Hold (0.8s)**: Masuk (Select) / Toggle / Keluar dari menu atau fitur aktif.
-- **Wake**: Membangunkan jam dari Deep Sleep.
-
----
-
-## 3. State Machine & Fitur
-
-1.  **WATCHFACE**: 
-    - Menampilkan Jam (HH:MM), Tanggal, dan Baterai.
-    - Menampilkan FPS (Opsional).
-    - Status AOD (Always-On Display) indikator.
-2.  **MENU_HR → EXEC_HR**: 
-    - Hold (0.8s) di menu HR untuk mulai mengukur.
-    - Tampilan hitam (Power Saving) saat pengukuran berlangsung.
-    - Hold (0.8s) saat pengukuran untuk mematikan sensor dan kembali ke menu.
-3.  **MENU_AOD**: 
-    - Hold (0.8s) untuk mengaktifkan/mematikan transisi ke mode AOD otomatis (setelah 10 detik idle).
-4.  **MENU_SLEEP**: 
-    - Hold (0.8s) untuk mematikan jam (Deep Sleep mode). Wake-up source: GPIO 5.
-5.  **MENU_BRIGHTNESS → SET_BRIGHTNESS**: 
-    - Hold (0.8s) untuk masuk ke mode pengaturan.
-    - Klik Kanan/Kiri untuk nambah/kurang brightness.
-    - Hold (0.8s) untuk simpan dan keluar.
-
----
-
-## 4. UI/UX & Rendering (Experimental v8)
-
-- **Wallpaper Injection**: Wallpaper tetap terlihat di belakang menu pop-up (Glassmorphism).
-- **Anti-Flicker Double Buffering**: Semua perubahan konten menu diproses di memori (Sprite) sebelum dikirim ke LCD untuk eliminasi kedip.
-- **iPhone-Style Top Clock**: Jam mini (static) di tengah-atas semua menu.
-- **Slide Transition**: Efek animasi geser (Slide) saat navigasi menu dengan akselerasi CPU 160MHz.
-
----
-
-*Status: Disahkan v2.2 — Checkpoint 1 Integration.*
+### 4. Wake-Up Aesthetics
+- **Cinematic Start**: Backlight dimulai dari 0 (gelap total), ada jeda stabilitas 50ms, lalu melakukan *fade-in* selama 700ms (BL_FADE_MS + 200) untuk efek bernapas (*breathing*).

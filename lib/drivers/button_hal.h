@@ -8,13 +8,19 @@ typedef enum {
     BTN_LEFT_CLICK, 
     BTN_LEFT_HOLD,
     BTN_RIGHT_CLICK, 
-    BTN_RIGHT_HOLD 
+    BTN_RIGHT_HOLD,
+    BTN_RIGHT_DOUBLE
 } ButtonEvent;
 
 /**
  * @brief Initialize button GPIO with internal pullup.
  */
 void button_hal_init();
+
+/**
+ * @brief Enable/Disable double click detection (reduces latency when OFF).
+ */
+void button_hal_set_double_click(bool enabled);
 
 /**
  * @brief Polling function to read button events.

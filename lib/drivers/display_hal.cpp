@@ -10,6 +10,9 @@ static const uint32_t BL_FREQ = 5000;
 static const uint8_t BL_RES = 8;
 static uint8_t current_brightness = 0;
 
+// LCD Pins from config
+#define PIN_LCD_RES  1
+
 // Task handle for fade operation
 static TaskHandle_t fade_task_handle = NULL;
 
@@ -46,20 +49,34 @@ static void fade_task_worker(void* pvParameters) {
 }
 
 void display_hal_init() {
-    // Initialize SPI and Driver
+    // ANALOG LOCK - Kill BL immediately
+    pinMode(BL_PIN, OUTPUT);
+    digitalWrite(BL_PIN, LOW); 
+
+    // Hard LCD Reset
+    pinMode(PIN_LCD_RES, OUTPUT);
+    digitalWrite(PIN_LCD_RES, LOW);
+    delay(100);
+    digitalWrite(PIN_LCD_RES, HIGH);
+    delay(50);
+
+    // INIT TFT & INSTA-MASK
     tft.init();
-    tft.setRotation(0); 
-    tft.invertDisplay(true); // Invert colors (Required for most 1.69" / 240x280 ST7789)
-    tft.setSwapBytes(true);  // Swap bytes for RGB565 word order
-    tft.fillScreen(TFT_BLACK);
+    tft.writecommand(0x28); // Force DISPOFF (Mask)
     
-    // PWM Configuration for Backlight (ESP32-C3)
-    // Using 2.x API as per espressif32@6.4.0 constraint
+    delay(150); 
+    
+    tft.writecommand(0x37); tft.writedata(0); tft.writedata(0); tft.writedata(0); tft.writedata(0); tft.writedata(0); tft.writedata(0);
+    tft.writecommand(0x33); tft.writedata(0); tft.writedata(0); 
+    
+    tft.setRotation(0); 
+    tft.invertDisplay(true); 
+    tft.setSwapBytes(true);  
+    tft.fillScreen(TFT_BLACK); 
+    
     ledcSetup(BL_CHANNEL, BL_FREQ, BL_RES);
     ledcAttachPin(BL_PIN, BL_CHANNEL);
-    display_hal_backlight_set(0); 
-    
-    Serial.println("Display HAL: Initialized ST7789 240x280 // [DEBUG]");
+    display_hal_backlight_set(0);
 }
 
 void display_hal_backlight_set(uint8_t brightness) {
@@ -67,55 +84,38 @@ void display_hal_backlight_set(uint8_t brightness) {
     ledcWrite(BL_CHANNEL, brightness);
 }
 
+void display_hal_display_off() { tft.writecommand(0x28); }
+void display_hal_display_on()  { tft.writecommand(0x29); }
+
 void display_hal_backlight_fade_in(uint8_t target, int duration_ms) {
-    // Cancel existing fade if any
-    if (fade_task_handle != NULL) {
-        vTaskDelete(fade_task_handle);
-        fade_task_handle = NULL;
-    }
-    
+    if (fade_task_handle != NULL) { vTaskDelete(fade_task_handle); fade_task_handle = NULL; }
     FadeParams* params = new FadeParams{target, duration_ms};
-    
-    // Create non-blocking task for fade in
-    BaseType_t res = xTaskCreate(
-        fade_task_worker, 
-        "BL_Fade", 
-        2048, 
-        params, 
-        1, 
-        &fade_task_handle
-    );
-    
-    if (res != pdPASS) {
-        delete params;
-        display_hal_backlight_set(target); // Fallback to instant set
-    }
-    
-    Serial.printf("Display HAL: Fade in to %d start (%d ms) // [DEBUG]\n", target, duration_ms);
+    xTaskCreate(fade_task_worker, "BL_Fade", 2048, params, 2, &fade_task_handle);
 }
 
 void display_hal_backlight_fade_out() {
-    // Stop any active fade in
-    if (fade_task_handle != NULL) {
-        vTaskDelete(fade_task_handle);
-        fade_task_handle = NULL;
-    }
-
-    // Synchronous fade out before sleep (skill specific behavior)
+    if (fade_task_handle != NULL) { vTaskDelete(fade_task_handle); fade_task_handle = NULL; }
+    
+    // 1. Elegan Fade Out (Breathing out)
     uint8_t b = current_brightness;
-    while (b > 0) {
-        b = (b > 10) ? (b - 10) : 0;
+    while (b > 5) {
+        b -= 5;
         display_hal_backlight_set(b);
-        delay(15); // Small sync delay allowed for shutdown sequence
+        delay(10);
     }
+    display_hal_backlight_set(0);
     
-    // RULE-005: Close MOSFET leak path
-    digitalWrite(BL_PIN, LOW);
+    // 2. Scrub VRAM in the dark
+    delay(50);
+    tft.fillScreen(TFT_BLACK); 
+    tft.writecommand(0x28); 
+
+    // 3. Final Analog Kill
     ledcDetachPin(BL_PIN); 
+    pinMode(BL_PIN, OUTPUT);
+    digitalWrite(BL_PIN, LOW);
     
-    Serial.println("Display HAL: Backlight Detached (RULE-005) // [DEBUG]");
+    Serial.println("Display HAL: Protected Elegant Shutdown // [DEBUG]");
 }
 
-TFT_eSPI& display_hal_get_tft() {
-    return tft;
-}
+TFT_eSPI& display_hal_get_tft() { return tft; }

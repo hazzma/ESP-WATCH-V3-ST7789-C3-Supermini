@@ -8,16 +8,21 @@
 #include "power_manager.h"
 
 void setup() {
+    // DISPLAY AGENT EMERGENCY FIX: 
+    // Kill Backlight immediately at start of setup to prevent flicker during Serial delay.
+    // Pin 10 is PIN_LCD_BL (mapped in app_config.h)
+    pinMode(10, OUTPUT);
+    digitalWrite(10, LOW);
+
     // 1. Core Serial
     Serial.begin(115200);
-    delay(500);
-    Serial.println("ESP32-C3 Smartwatch v2.0 Booting... // [DEBUG]");
+    // Serial wait delay - Backlight stays black during this 500ms window
+    delay(500); 
+    Serial.println("ESP32-C3 Smartwatch v2.1 (Zero-Flicker Boot) // [DEBUG]");
 
     // 2. Hardware initialization
-    // RULE-008: Wire.begin exactly once
     Wire.begin(PIN_SDA, PIN_SCL);
     
-    // Power manager should be first to set stable clocks
     power_manager_init();
     display_hal_init();
     button_hal_init();
@@ -29,6 +34,5 @@ void setup() {
 }
 
 void loop() {
-    // Core state management
     ui_manager_update();
 }

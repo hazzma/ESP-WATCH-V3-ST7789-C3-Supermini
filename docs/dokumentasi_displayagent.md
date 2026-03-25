@@ -1,71 +1,35 @@
-# Laporan Pengembangan Display HAL & Backlight System
+# 🛡️ Dokumentasi Display Agent - Zero-Flicker Initiative
 
-Dibuat oleh: **Display HAL Agent**  
-Target: ESP32-C3 Watch (GPIO 10 - PIN_LCD_BL)  
-Status: ✅ **Sync with Hardware Works**
+Laporan ini merangkum perjuangan teknis dalam menghilangkan kedipan maut (*power-on flicker*) dan artefak gambar rusak pada ESP32-C3 Smartwatch v3.
 
----
+## 1. Masalah Utama (The Enemy)
+*   **Flicker Putih**: Muncul kilatan putih/abu-abu selama sepersekian detik saat bangun dari Deep Sleep.
+*   **Artifact VRAM (Gambar Rusak)**: Bagian atas layar sering menampilkan "salju" atau gambar korup sebelum Wallpaper muncul sempurna.
+*   **Ghosting Sisa**: Tampilan wallpaper lama yang sempat terlihat sesaat sebelum ke-refresh.
 
-## 1. Konfigurasi Hardware (PWM)
+## 2. Analisa Akar Masalah (The Cause)
+*   **Hardware Constraint (CS Fixed LOW)**: Pin Chip Select (CS) ditarik fisik ke GND. Ini membuat LCD selalu "mendengarkan" kabel SPI, termasuk sampah data dari bootloader.
+*   **SPI Flash Conflict (GPIO 10)**: Pin Backlight (IO10) berbagi jalur dengan internal Flash SPI pada beberapa mode bot ESP32-C3. Aktivitas baca program di awal bot menyebabkan lampu latar berkedip liar.
+*   **VRAM Dirty State**: Saat power-on, memori internal ST7789 berisi data acak (sampah) yang harus segera dibersihkan sebelum lampu menyala.
 
-Untuk mengontrol tingkat kecerahan layar tanpa membuat layar berkedip (*flicker*), saya menggunakan modul **LEDC** bawaan ESP32-C3.
+## 3. Taktik Software yang Diterapkan (The Strategy)
+Untuk mencapai transisi kelas premium, kita menerapkan strategi **"Sequential Masking & Snap-ON"**:
 
-### Parameter PWM:
-- **Frequency**: 5000 Hz (Tinggi agar tidak terlihat getar oleh mata manusia).
-- **Resolution**: 8-bit (0-255).
-- **Pin**: GPIO 10.
+1.  **Early Backlight Kill**: Pada baris pertama `setup()`, pin 10 langsung dipaksa `LOW` via `digitalWrite` murni (Bukan PWM) untuk meminimalkan durasi kedipan bootloader.
+2.  **Insta-Masking (0x28)**: Perintah `DISPLAY OFF` dikirim dalam hitungan mikrodetik setelah `tft.init()`. Ini memutus aliran data VRAM ke panel kaca agar "salju" memori tidak terlihat.
+3.  **Double VRAM Scrubbing**: UI Manager menggambar Wallpaper lengkap sebanyak **DUA KALI** berturut-turut saat layar masih terkunci mode gelap. Ini memastikan memori LCD benar-benar "Sapurata" bersih sebelum lampu idup.
+4.  **Stable Delay (150ms)**: Memberikan waktu bagi regulator internal LCD untuk stabil sebelum menerima hantaman data SPI kecepatan tinggi.
+5.  **Snap-ON Strategy**: Menghapus efek *breathing* (redup ke terang) saat bangun. Lampu langsung ditembak ke target tingkat kecerahan secara instan setelah VRAM siap. Kecepatan ini membantu menutupi noise hardware yang tersisa.
+6.  **Elegant Shutdown (Breathing OUT)**: Tetap mempertahankan efek meredup perlahan saat mau tidur untuk menjaga estetika "Jam Mahal".
 
-```cpp
-// Konfigurasi awal di display_hal.cpp
-ledcSetup(BL_CHANNEL, 5000, 8); // 5kHz, 8-bit
-ledcAttachPin(10, BL_CHANNEL);
-```
+## 4. Hardware Recommendations (Next Level)
+Jika di masa depan ingin mencapai kesempurnaan 100% tanpa bantuan software akrobatik:
+*   **Kapasitor Filter**: Tambahkan kapasitor **1uF - 10uF** antara pin Backlight (GPIO 10) dan GND untuk meredam lonjakan listrik liar dari bootloader.
+*   **MOSFET Pull-Down**: Gunakan resistor pull-down 10k pada jalur Gate MOSFET backlight.
+*   **Independent CS**: Jika memungkinkan pada revisi PCB berikutnya, hubungkan pin CS LCD ke GPIO ESP32-C3 agar bisa dikendalikan sepenuhnya oleh software.
 
----
-
-## 2. Fitur "Memory" (Persistence)
-
-Masalah umum pada jam tangan adalah settingan brightness yang balik ke default setelah dimatikan. Saya menggunakan atribut **RTC RAM** milik ESP32-C3 agar nilai brightness bertahan meskipun jam masuk ke mode **Deep Sleep**.
-
-```cpp
-// Di ui_manager.cpp
-static RTC_DATA_ATTR int brightness_ui_val = 127; // Tersimpan di memori RTC
-```
-
-Saat jam bangun dari tidur, `ui_manager_init()` langsung memanggil nilai ini untuk memulihkan kecerahan terakhir.
+## 5. Status Terkini: LOCKED 🔒
+Sistem saat ini sudah sangat stabil dengan transisi yang bersih (Dark -> Snap Wallpaper). Taktik asimetris (Snap-ON / Breathing-OUT) telah teruji sebagai solusi terbaik untuk keterbatasan hardware saat ini.
 
 ---
-
-## 3. Sinkronisasi UI & Hardware
-
-Setiap kali pengguna menekan tombol Kiri atau Kanan di menu pengaturan, dua hal terjadi secara simultan:
-1. **Visual Update**: Bar hijau di layar bertambah/berkurang.
-2. **Hardware Update**: Nilai PWM dikirim langsung ke driver layar.
-
-```cpp
-// Snippet Logic di ui_manager_update()
-if (bt == BTN_RIGHT_CLICK) {
-    brightness_ui_val += 15; 
-    if (brightness_ui_val > 255) brightness_ui_val = 255;
-    
-    // Perintah langsung ke hardware:
-    display_hal_backlight_set(brightness_ui_val); 
-}
-```
-
----
-
-## 4. Efek Fade-In Smooth
-
-Untuk memberikan kesan premium, saat jam tangan baru dinyalakan, layar tidak langsung "jreng" terang, melainkan melakukan **Fade-In** halus dari gelap ke tingkat terang yang diinginkan.
-
-```cpp
-void ui_manager_init() {
-    // ... init lainnya ...
-    display_hal_backlight_fade_in(brightness_ui_val, 500); // 500ms fade
-}
-```
-
----
-
-*Status: Terkoneksi & Persisten.*
+*Laporan selesai by Display Agent - Checkpoint 3 Finalized.*

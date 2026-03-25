@@ -6,11 +6,11 @@
 - **Precision Mode**: 250ms gap allowed ONLY in Timer Setup for `BTN_RIGHT_DOUBLE`.
 - **Hold**: 800ms (Always instant).
 *   **Checkpoint 2 (LOCKED)**: UI/UX finalized, AOD Anti-Sleep, Fast/Precision Switching, Ghost Protection (GPS).
-*   **Checkpoint 3 (LOCKED - CURRENT)**: **Zero-Flicker Boot & Snap-ON Wakeup**.
-    *   **Snap-ON Logic**: Fast 100% BL trigger on wake to mask HW noise.
-    *   **Double VRAM Scrubbing**: Double-redundant wallpaper rendering while hardware masked (DISPOFF).
-    *   **Insta-Masking**: 0x28 command priority to block bootloader garbage.
-    *   **Elegant Shutdown**: Breathing fade-out preserved for premium feel.
+*   **Checkpoint 3 (LOCKED)**: **Zero-Flicker Boot & Snap-ON Wakeup**.
+*   **Checkpoint 4 (LOCKED - CURRENT)**: **Sensor Logic & Silent Optimization**.
+    *   **Silent Mode**: All Serial logs wrapped in `if (Serial)` to prevent power waste and USB-CDC blocking.
+    *   **MAX30100 Logic**: Removed all Serial calls from sensor callbacks (onBeatDetected) to allow standalone operation.
+    *   **System Stability**: Optimized DFS (Dynamic Frequency Scaling) logs for zero-latency during transitions.
 
 ### 2. UI Rendering & Ghost Protection (LOCKED)
 - **Ghost Protection System (GPS)**:

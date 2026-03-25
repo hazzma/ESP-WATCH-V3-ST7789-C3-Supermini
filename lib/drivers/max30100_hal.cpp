@@ -12,20 +12,20 @@ static uint32_t lastBeatTime = 0;
 
 /**
  * @brief Callback when a beat is detected.
+ * @note [SENSOR AGENT] Removed Serial.println to prevent USB CDC blocking 
+ * when Serial Monitor is not connected.
  */
 static void onBeatDetected() {
     lastBeatTime = millis();
-    Serial.println("[MAX30100] Beat! // [DEBUG]");
+    // NEVER put Serial.println here for production/deep-sleep devices
 }
 
 bool max30100_hal_init() {
-    Serial.println("[MAX30100] Init started... // [DEBUG]");
-
-    // Use exact working pattern: Single Wire.begin followed by pox.begin
+    // [SENSOR AGENT] We rely on the Wire.begin already called in main.cpp
+    // But we keep it here just in case this init is called standalone
     Wire.begin(PIN_SDA, PIN_SCL);
     
     if (!pox.begin()) {
-        Serial.println("[MAX30100] FAILED! // [DEBUG]");
         return false;
     }
 
@@ -33,7 +33,6 @@ bool max30100_hal_init() {
     pox.setOnBeatDetectedCallback(onBeatDetected);
     lastBeatTime = millis(); 
 
-    Serial.println("[MAX30100] OK - Sensor ready // [DEBUG]");
     return true;
 }
 
@@ -43,11 +42,9 @@ void max30100_hal_update() {
 
 void max30100_hal_shutdown() {
     pox.shutdown();
-    Serial.println("[MAX30100] Shutdown // [DEBUG]");
 }
 
 float max30100_hal_get_bpm() {
-    // BUG 4: Finger-off check
     if (millis() - lastBeatTime > FINGER_OFF_TIMEOUT_MS) {
         return 0.0f;
     }
@@ -55,7 +52,6 @@ float max30100_hal_get_bpm() {
 }
 
 uint8_t max30100_hal_get_spo2() {
-    // BUG 4: Finger-off check
     if (millis() - lastBeatTime > FINGER_OFF_TIMEOUT_MS) {
         return 0;
     }

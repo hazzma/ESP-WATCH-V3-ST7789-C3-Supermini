@@ -8,7 +8,7 @@
 #include "display_hal.h"
 
 void power_manager_init() {
-    Serial.println("[POWER] Initializing Power Manager... // [DEBUG]");
+    if (Serial) Serial.println("[POWER] Initializing Power Manager... // [DEBUG]");
     
     // Enable RTC domain power during sleep to allow certain wakeups
     esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
@@ -21,11 +21,11 @@ void power_manager_set_freq(int mhz) {
     if (mhz == getCpuFrequencyMhz()) return;
     
     setCpuFrequencyMhz(mhz);
-    Serial.printf("[POWER] DFS: CPU Frequency set to %d MHz // [DEBUG]\n", mhz);
+    if (Serial) Serial.printf("[POWER] DFS: CPU Frequency set to %d MHz // [DEBUG]\n", mhz);
 }
 
 void power_manager_enter_deep_sleep() {
-    Serial.println("[POWER] Executing Pre-Sleep sequence... // [DEBUG]");
+    if (Serial) Serial.println("[POWER] Executing Pre-Sleep sequence... // [DEBUG]");
 
     // 1. Spin-wait sampai GPIO 5 = HIGH (release guard) — RULE-006
     pinMode(PIN_BTN_RIGHT, INPUT_PULLUP);
@@ -53,7 +53,7 @@ void power_manager_enter_deep_sleep() {
     esp_deep_sleep_enable_gpio_wakeup(1ULL << PIN_BTN_RIGHT, ESP_GPIO_WAKEUP_GPIO_LOW);
 
     // 8. esp_deep_sleep_start() — RULE-001
-    Serial.println("[POWER] System entering Deep Sleep now. // [DEBUG]");
+    if (Serial) Serial.println("[POWER] System entering Deep Sleep now. // [DEBUG]");
     delay(100);
     esp_deep_sleep_start();
 }
@@ -69,7 +69,7 @@ static RTC_DATA_ATTR uint32_t auto_sleep_sec = 15;
 
 void power_manager_set_auto_sleep_timeout(uint32_t seconds) {
     auto_sleep_sec = seconds;
-    Serial.printf("[POWER] Auto-Sleep set to %d seconds // [DEBUG]\n", seconds);
+    if (Serial) Serial.printf("[POWER] Auto-Sleep set to %d seconds // [DEBUG]\n", seconds);
 }
 
 uint32_t power_manager_get_auto_sleep_timeout() {

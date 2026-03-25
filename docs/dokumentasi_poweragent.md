@@ -1,58 +1,36 @@
-# Laporan Pengembangan Power Management & Auto-Sleep
+# 🔋 Dokumentasi Power & Sleep Agent - Optimization Log
 
-Dibuat oleh: **Power Agent**  
-Target: ESP32-C3 Power Domains  
-Fitur: ✅ **Quick Kill-Switch** & ✅ **Smart Auto-Sleep**
+Laporan ini merangkum strategi manajemen daya dan efisiensi energi yang diterapkan pada ESP32-C3 Smartwatch v3.
 
----
+## 1. Strategi Tidur (Deep Sleep Logic)
+*   **Trigger**: Aktivitas tombol berhenti selama durasi `timeout` yang bisa diatur (Default 15s).
+*   **Wake-up Source**: Menggunakan **GPIO 5 (Tombol Kanan)** sebagai pemicu bangun (*Hardware Wakeup*). 
+*   **Pre-Sleep Guard**: Sebelum tidur, sistem melakukan "Sapu Jagat" untuk mematikan sensor (MAX30100/BMI160) dan meredupkan layar secara elegan (*Breathing Out*) guna memastikan arus bocor minimal.
 
-## 1. Quick Kill-Switch (Hotkey Sleep)
+## 2. Dynamic Frequency Scaling (DFS)
+Sistem mengubah kecepatan CPU secara dinamis demi menghemat jam kerja baterai:
+*   **FREQ_HIGH (160MHz)**: Diaktifkan **hanya** saat animasi transisi menu (Slide) supaya tampilan mulus tanpa lag.
+*   **FREQ_MID (80MHz)**: Digunakan untuk penggunaan standar (Watchface, Heart Rate, Timer) demi keseimbangan performa dan daya.
+*   **FREQ_LOW (10-40MHz)**: Direncanakan untuk mode AOD di masa depan (Opsional).
 
-Untuk memudahkan pengguna mematikan jam tanpa harus masuk ke menu, saya mengimplementasikan **Hotkey Shutdown** pada tombol kiri.
+## 3. AOD vs Deep Sleep (Priority Matrix)
+*   **AOD ON**: Jam tidak akan pernah tidur (*Deep Sleep*). Saat timeout tercapai, layar hanya akan meredup (*Dimmed*) ke tingkat kecerahan minimal (PWM 15) untuk tetap menampilkan waktu.
+*   **AOD OFF**: Jam akan langsung masuk ke *Deep Sleep* saat timeout tercapai untuk penghematan daya ekstrim.
 
-- **Input**: **GPIO 7** (Tombol Kiri).
-- **Aksi**: Hold selama **0.8 detik**.
-- **Hasil**: Jam langsung mematikan semua sensor, meredupkan layar, dan masuk ke **Deep Sleep**.
-- **Context**: Bisa dilakukan dari layar mana saja (Watchface/Menu).
+## 4. Silent Mode Optimization (Anti-Blocking)
+Baru saja diterapkan untuk mengeliminasi pemborosan daya dan resiko sistem macet:
+*   **Serial Connection Guard**: Setiap perintah `Serial.println` atau `Serial.printf` sekarang wajib dibungkus oleh `if (Serial)`.
+*   **Manfaat**: 
+    1.  **Irit Tenaga**: CPU tidak membuang clock cycle untuk memformat string teks jika tidak ada kabel USB yang mendengarkan.
+    2.  **Anti-Hold**: Menghindari resiko sistem berhenti (*hang/blocking*) akibat buffer USB CDC yang penuh pada chip ESP32-C3.
+    3.  **Low Current Leak**: Jalur komunikasi digital tetap tenang saat penggunaan baterai murni.
 
-```cpp
-// Logic di ui_manager.cpp
-else if (bt == BTN_LEFT_HOLD) {
-    power_manager_enter_deep_sleep();
-}
-```
+## 5. Sinkronisasi Anti-Flicker (Power Sync)
+Power Agent bekerja sama dengan Display Agent untuk memastikan:
+*   **Hard-Kill Backlight**: Pin 10 ditarik `LOW` secara analog tepat sebelum perintah `esp_deep_sleep_start()` dieksekusi, guna mencegah kilatan cahaya liar saat proses booting berikutnya.
 
----
-
-## 2. Smart Auto-Sleep System
-
-Jam tangan sekarang memiliki timer otomatis yang mendeteksi ketidakaktifan pengguna (*idle*).
-
-- **Default Timeout**: 15 Detik (Bisa diubah lewat `power_manager_set_auto_sleep_timeout`).
-- **Logic Cabang**:
-    1. **AOD ON**: Jika pengaturan AOD menyala, jam hanya akan **meredupkan layar** (Dimmed mode) ke kecerahan minimal (15%) agar tetap bisa melihat jam.
-    2. **AOD OFF**: Jika pengaturan AOD mati, jam akan langsung masuk ke **Deep Sleep** (Mati total) untuk menghemat baterai secara maksimal.
-
-```cpp
-// Algoritma Penentu di ui_manager_update()
-uint32_t timeout_ms = power_manager_get_auto_sleep_timeout() * 1000;
-if (now - last_activity_time > timeout_ms) {
-    if (aod_allowed) is_dimmed_aod = true; // Cuma redup
-    else power_manager_enter_deep_sleep(); // Mati total
-}
-```
+## 6. Battery Monitoring
+*   **ADC Reading**: Menggunakan **GPIO 3** dengan pembagi tegangan (Voltage Divider) untuk membaca level tegangan baterai secara akurat dalam skala 0-100%.
 
 ---
-
-## 3. Integrasi Versi Berikutnya (UI Setup)
-
-Bagi **Agent UI**, berikut adalah *endpoint* yang bisa digunakan untuk membuat halaman pengaturan waktu tidur:
-
-- **Getter**: `power_manager_get_auto_sleep_timeout()` (mengembalikan nilai `uint32_t` dalam detik).
-- **Setter**: `power_manager_set_auto_sleep_timeout(uint32_t seconds)`.
-
-> ⚠️ Nilai ini disimpan di **RTC RAM**, sehingga tidak akan hilang meskipun jam dimatikan.
-
----
-
-*Status: Hemat Daya & Responsif.*
+*Laporan selesai by Power & Sleep Agent - Efficiency Tier: S-Rank.*

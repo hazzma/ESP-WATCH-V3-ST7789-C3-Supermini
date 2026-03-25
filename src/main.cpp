@@ -18,7 +18,7 @@ void setup() {
     Serial.begin(115200);
     // Serial wait delay - Backlight stays black during this 500ms window
     delay(500); 
-    Serial.println("ESP32-C3 Smartwatch v2.1 (Zero-Flicker Boot) // [DEBUG]");
+    if (Serial) Serial.println("ESP32-C3 Smartwatch v2.1 (Zero-Flicker Boot) // [DEBUG]");
 
     // 2. Hardware initialization
     Wire.begin(PIN_SDA, PIN_SCL);
@@ -30,7 +30,7 @@ void setup() {
     // 3. Manager initialization
     ui_manager_init();
     
-    Serial.println("System: Setup complete. // [DEBUG]");
+    if (Serial) Serial.println("System: Setup complete. // [DEBUG]");
 }
 
 void loop() {

@@ -20,7 +20,7 @@ void button_hal_init() {
     pinMode(PIN_BTN_LEFT, INPUT_PULLUP);
     pinMode(PIN_BTN_RIGHT, INPUT_PULLUP);
     double_click_active = false; // Default to FAST mode
-    Serial.println("Button HAL: Dual button initialized (Default: ZERO Latency) // [DEBUG]");
+    if (Serial) Serial.println("Button HAL: Dual button initialized (Default: ZERO Latency) // [DEBUG]");
 }
 
 void button_hal_set_double_click(bool enabled) {

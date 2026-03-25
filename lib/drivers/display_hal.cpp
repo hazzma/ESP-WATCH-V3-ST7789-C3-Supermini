@@ -77,6 +77,8 @@ void display_hal_init() {
     ledcSetup(BL_CHANNEL, BL_FREQ, BL_RES);
     ledcAttachPin(BL_PIN, BL_CHANNEL);
     display_hal_backlight_set(0);
+
+    if (Serial) Serial.println("Display HAL: ST7789 Initialized (Anti-Noise Hardware Patch) // [DEBUG]");
 }
 
 void display_hal_backlight_set(uint8_t brightness) {
@@ -115,7 +117,7 @@ void display_hal_backlight_fade_out() {
     pinMode(BL_PIN, OUTPUT);
     digitalWrite(BL_PIN, LOW);
     
-    Serial.println("Display HAL: Protected Elegant Shutdown // [DEBUG]");
+    if (Serial) Serial.println("Display HAL: Protected Elegant Shutdown // [DEBUG]");
 }
 
 TFT_eSPI& display_hal_get_tft() { return tft; }

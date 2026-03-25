@@ -7,10 +7,10 @@
 #include "assets_wallpaper.h"
 #include "assets_icons.h"
 
-// Persist
+// Persist - RTC_DATA_ATTR so brightness stays after sleep
 static RTC_DATA_ATTR bool aod_allowed = false; 
+static RTC_DATA_ATTR int brightness_ui_val = 127; // Default 50%
 static AppState current_state = STATE_WATCHFACE;
-static int brightness_ui_val = 150; 
 
 // Runtime
 static bool is_dimmed_aod = false; 
@@ -56,8 +56,13 @@ void ui_manager_init() {
     fps_spr.createSprite(35, 15);     fps_spr.setSwapBytes(true);
     top_clock_spr.createSprite(60, 15); top_clock_spr.setSwapBytes(true);
     menu_spr.createSprite(MENU_BW, MENU_BH); menu_spr.setSwapBytes(true);
+    
+    // SYNC: Apply current brightness at start
+    display_hal_backlight_set(brightness_ui_val);
+    
     render_current_state();
-    display_hal_backlight_fade_in(255, BL_FADE_MS);
+    // Use the saved brightness for fade in if entering from cold boot
+    display_hal_backlight_fade_in(brightness_ui_val, BL_FADE_MS);
 }
 
 static void push_wallpaper_rect(int x, int y, int w, int h) {
@@ -138,7 +143,7 @@ void ui_manager_update() {
     if (bt != BTN_NONE) {
         last_activity_time = now;
         if (is_dimmed_aod) {
-            is_dimmed_aod = false; display_hal_backlight_set(255);
+            is_dimmed_aod = false; display_hal_backlight_set(brightness_ui_val); // SYNC Back
             power_manager_set_freq(FREQ_MID); last_rendered_state = (AppState)-1; last_min_val = -1;
             bt = BTN_NONE;
         }
@@ -156,7 +161,11 @@ void ui_manager_update() {
 
     AppState target = current_state; int d = 0;
     if (bt == BTN_RIGHT_CLICK) {
-        if (current_state == STATE_SET_BRIGHTNESS) { brightness_ui_val += 15; if (brightness_ui_val > 255) brightness_ui_val = 255; logical_change = true; }
+        if (current_state == STATE_SET_BRIGHTNESS) { 
+            brightness_ui_val += 15; if (brightness_ui_val > 255) brightness_ui_val = 255; 
+            display_hal_backlight_set(brightness_ui_val); // HARDWARE SYNC
+            logical_change = true; 
+        }
         else if (current_state != STATE_EXEC_HR) {
             d = 1;
             if (current_state == STATE_WATCHFACE)       target = STATE_MENU_HR;
@@ -166,7 +175,11 @@ void ui_manager_update() {
             else if (current_state == STATE_MENU_BRIGHTNESS) target = STATE_WATCHFACE;
         }
     } else if (bt == BTN_LEFT_CLICK) {
-        if (current_state == STATE_SET_BRIGHTNESS) { brightness_ui_val -= 15; if (brightness_ui_val < 0) brightness_ui_val = 0; logical_change = true; }
+        if (current_state == STATE_SET_BRIGHTNESS) { 
+            brightness_ui_val -= 15; if (brightness_ui_val < 0) brightness_ui_val = 0; 
+            display_hal_backlight_set(brightness_ui_val); // HARDWARE SYNC
+            logical_change = true; 
+        }
         else if (current_state != STATE_EXEC_HR) {
             d = -1;
             if (current_state == STATE_WATCHFACE)        target = STATE_MENU_BRIGHTNESS;
@@ -212,7 +225,6 @@ static void render_current_state() {
     if (current_state == STATE_WATCHFACE) { draw_watchface(tft, (current_state != last_rendered_state)); return; }
     
     power_manager_set_freq(FREQ_MID);
-    // BUG FIX: If we come from EXEC_HR or WATCHFACE or first start, we MUST redraw full wallpaper
     if (last_rendered_state == STATE_WATCHFACE || last_rendered_state == STATE_EXEC_HR || last_rendered_state == (AppState)-1) {
         tft.pushImage(0, 0, 240, 280, assets_get_wallpaper());
         push_top_clock(true);

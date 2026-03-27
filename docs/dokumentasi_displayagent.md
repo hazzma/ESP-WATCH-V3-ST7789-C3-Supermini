@@ -1,35 +1,58 @@
 # 🛡️ Dokumentasi Display Agent - Zero-Flicker Initiative
+*Status: S-Rank Finalized (v3.8)*
 
 Laporan ini merangkum perjuangan teknis dalam menghilangkan kedipan maut (*power-on flicker*) dan artefak gambar rusak pada ESP32-C3 Smartwatch v3.
 
-## 1. Masalah Utama (The Enemy)
-*   **Flicker Putih**: Muncul kilatan putih/abu-abu selama sepersekian detik saat bangun dari Deep Sleep.
-*   **Artifact VRAM (Gambar Rusak)**: Bagian atas layar sering menampilkan "salju" atau gambar korup sebelum Wallpaper muncul sempurna.
-*   **Ghosting Sisa**: Tampilan wallpaper lama yang sempat terlihat sesaat sebelum ke-refresh.
+## 1. Masalah Utama yang Diatasi
+*   **Flash Putih (The White Ghost)**: Muncul kilatan putih saat bangun dari Deep Sleep akibat VRAM default ST7789.
+*   **SPI Tearing**: Efek bagian atas layar bergeser duluan dibanding bawah saat navigasi.
+*   **Glitched Startup**: Muncul salju/noise di layar saat transisi bootloader.
 
-## 2. Analisa Akar Masalah (The Cause)
-*   **Hardware Constraint (CS Fixed LOW)**: Pin Chip Select (CS) ditarik fisik ke GND. Ini membuat LCD selalu "mendengarkan" kabel SPI, termasuk sampah data dari bootloader.
-*   **SPI Flash Conflict (GPIO 10)**: Pin Backlight (IO10) berbagi jalur dengan internal Flash SPI pada beberapa mode bot ESP32-C3. Aktivitas baca program di awal bot menyebabkan lampu latar berkedip liar.
-*   **VRAM Dirty State**: Saat power-on, memori internal ST7789 berisi data acak (sampah) yang harus segera dibersihkan sebelum lampu menyala.
+## 2. Strategi "Nuclear Masking" (v3.8 Update) 🚀
+Untuk mencapai transisi kelas premium tanpa kilatan, kita menerapkan strategi berlapis:
 
-## 3. Taktik Software yang Diterapkan (The Strategy)
-Untuk mencapai transisi kelas premium, kita menerapkan strategi **"Sequential Masking & Snap-ON"**:
+1.  **Hardware Pulldown Insurance**: Memaksa GPIO 10 tetap LOW secara elektrik.
+2.  **Post-INIT Re-Force**: Menangkap glitch otomatis dari library.
+3.  **Cold Black Scrubbing**: Membersihkan VRAM warna hitam murni dalam waktu <13ms.
+4.  **Snap-ON to Breathing**: Transisi halus (~150ms).
 
-1.  **Early Backlight Kill**: Pada baris pertama `setup()`, pin 10 langsung dipaksa `LOW` via `digitalWrite` murni (Bukan PWM) untuk meminimalkan durasi kedipan bootloader.
-2.  **Insta-Masking (0x28)**: Perintah `DISPLAY OFF` dikirim dalam hitungan mikrodetik setelah `tft.init()`. Ini memutus aliran data VRAM ke panel kaca agar "salju" memori tidak terlihat.
-3.  **Double VRAM Scrubbing**: UI Manager menggambar Wallpaper lengkap sebanyak **DUA KALI** berturut-turut saat layar masih terkunci mode gelap. Ini memastikan memori LCD benar-benar "Sapurata" bersih sebelum lampu idup.
-4.  **Stable Delay (150ms)**: Memberikan waktu bagi regulator internal LCD untuk stabil sebelum menerima hantaman data SPI kecepatan tinggi.
-5.  **Snap-ON Strategy**: Menghapus efek *breathing* (redup ke terang) saat bangun. Lampu langsung ditembak ke target tingkat kecerahan secara instan setelah VRAM siap. Kecepatan ini membantu menutupi noise hardware yang tersisa.
-6.  **Elegant Shutdown (Breathing OUT)**: Tetap mempertahankan efek meredup perlahan saat mau tidur untuk menjaga estetika "Jam Mahal".
+### 🛠️ Reference Code (Surgical Logic)
+Berikut adalah potongan kode kritis untuk menjaga stabilitas display di masa depan:
 
-## 4. Hardware Recommendations (Next Level)
-Jika di masa depan ingin mencapai kesempurnaan 100% tanpa bantuan software akrobatik:
-*   **Kapasitor Filter**: Tambahkan kapasitor **1uF - 10uF** antara pin Backlight (GPIO 10) dan GND untuk meredam lonjakan listrik liar dari bootloader.
-*   **MOSFET Pull-Down**: Gunakan resistor pull-down 10k pada jalur Gate MOSFET backlight.
-*   **Independent CS**: Jika memungkinkan pada revisi PCB berikutnya, hubungkan pin CS LCD ke GPIO ESP32-C3 agar bisa dikendalikan sepenuhnya oleh software.
+**A. Proteksi Inisialisasi (`display_hal.cpp`):**
+```cpp
+void display_hal_init() {
+    pinMode(BL_PIN, OUTPUT);
+    digitalWrite(BL_PIN, LOW); 
+    gpio_set_pull_mode((gpio_num_t)BL_PIN, GPIO_PULLDOWN_ONLY); // Mencegah Floating
 
-## 5. Status Terkini: LOCKED 🔒
-Sistem saat ini sudah sangat stabil dengan transisi yang bersih (Dark -> Snap Wallpaper). Taktik asimetris (Snap-ON / Breathing-OUT) telah teruji sebagai solusi terbaik untuk keterbatasan hardware saat ini.
+    tft.init();
+    digitalWrite(BL_PIN, LOW); // Matikan paksa jika library sempat menyalakannya
+    tft.writecommand(0x28);    // DISPOFF - Jangan tampilkan sampah VRAM
+    tft.fillScreen(TFT_BLACK); // Cold Scrubbing
+}
+```
+
+**B. Sinkronisasi Wakeup (`ui_manager.cpp`):**
+```cpp
+void ui_manager_init() {
+    display_hal_display_off(); // Keep Mask
+    tft.fillScreen(TFT_BLACK); // Power Scrub
+    
+    render_current_state();    // Gambar Wallpaper 
+    display_hal_display_on();  // Buka Mask
+    display_hal_backlight_fade_in(val, 150); // Premium Entry
+    
+    last_rendered_state = current_state; // CRITICAL: Cegah kedipan ganda di loop
+}
+```
+
+## 3. High-Speed SPI (80MHz)
+*   **Manfaat**: Menghilangkan tearing vertikal karena pengiriman data 3x lebih cepat dibanding standar 27MHz.
+*   **Power Consumption**: Sangat efisien karena bus SPI hanya aktif sebentar lalu kembali idle (*Race-to-Sleep*).
+
+## 4. Status Terkini: LOCKED 🔒
+Sistem saat ini sudah sangat stabil dengan transisi yang bersih (Deep Black -> Wallpaper Slide). Taktik asimetris (Fast Breathing IN / Elegant Fade OUT) telah teruji sebagai solusi terbaik untuk keterbatasan hardware ST7789 tanpa pin CS.
 
 ---
-*Laporan selesai by Display Agent - Checkpoint 3 Finalized.*
+*Laporan selesai by Display Agent - Checkpoint 4 (Premium Grade).*

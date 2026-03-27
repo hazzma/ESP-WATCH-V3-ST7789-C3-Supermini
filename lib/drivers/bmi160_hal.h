@@ -10,6 +10,17 @@
 bool bmi160_hal_init();
 
 /**
- * @brief Shutdown the BMI160 stub.
+ * @brief Shutdown the BMI160.
  */
 void bmi160_hal_shutdown();
+
+/**
+ * @brief Reset the step counter.
+ */
+void bmi160_hal_reset_steps();
+
+/**
+ * @brief Get the current step count (offset corrected).
+ * @return Total steps.
+ */
+uint32_t bmi160_hal_get_steps();

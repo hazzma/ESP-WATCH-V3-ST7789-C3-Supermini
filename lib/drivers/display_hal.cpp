@@ -49,36 +49,35 @@ static void fade_task_worker(void* pvParameters) {
 }
 
 void display_hal_init() {
-    // ANALOG LOCK - Kill BL immediately
+    // 1. HARD ANALOG LOCK - Direct register level pull-down
     pinMode(BL_PIN, OUTPUT);
     digitalWrite(BL_PIN, LOW); 
+    gpio_set_pull_mode((gpio_num_t)BL_PIN, GPIO_PULLDOWN_ONLY); // Hardware level insurance
 
-    // Hard LCD Reset
+    // 2. Hardware LCD Reset Sequence
     pinMode(PIN_LCD_RES, OUTPUT);
     digitalWrite(PIN_LCD_RES, LOW);
     delay(100);
     digitalWrite(PIN_LCD_RES, HIGH);
     delay(50);
 
-    // INIT TFT & INSTA-MASK
+    // 3. Driver INIT & Cold Masking
     tft.init();
-    tft.writecommand(0x28); // Force DISPOFF (Mask)
+    digitalWrite(BL_PIN, LOW); // RE-FORCE: Catch any library-induced high state
+    tft.writecommand(0x28);    // DISPOFF
     
-    delay(150); 
-    
-    tft.writecommand(0x37); tft.writedata(0); tft.writedata(0); tft.writedata(0); tft.writedata(0); tft.writedata(0); tft.writedata(0);
-    tft.writecommand(0x33); tft.writedata(0); tft.writedata(0); 
-    
+    // 4. Register Tuning (Color/Orientation)
     tft.setRotation(0); 
     tft.invertDisplay(true); 
     tft.setSwapBytes(true);  
-    tft.fillScreen(TFT_BLACK); 
+    tft.fillScreen(TFT_BLACK); // Zero-out VRAM
     
+    // 5. Backlight PWM Setup (Stay at 0)
     ledcSetup(BL_CHANNEL, BL_FREQ, BL_RES);
     ledcAttachPin(BL_PIN, BL_CHANNEL);
-    display_hal_backlight_set(0);
+    ledcWrite(BL_CHANNEL, 0);
 
-    if (Serial) Serial.println("Display HAL: ST7789 Initialized (Anti-Noise Hardware Patch) // [DEBUG]");
+    if (Serial) Serial.println("Display HAL: ST7789 Initialized & Hard-Masked // [DEBUG]");
 }
 
 void display_hal_backlight_set(uint8_t brightness) {

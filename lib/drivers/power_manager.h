@@ -26,6 +26,12 @@ void power_manager_enter_deep_sleep();
 float power_manager_read_battery_voltage();
 
 /**
+ * @brief Check if USB is charging.
+ * @return True if charging.
+ */
+bool power_manager_is_charging();
+
+/**
  * @brief Manage Auto Sleep logic.
  * @param seconds Timeout in seconds. Use 0 to disable.
  */

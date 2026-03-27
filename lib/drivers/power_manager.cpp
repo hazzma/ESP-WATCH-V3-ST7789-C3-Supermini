@@ -8,7 +8,10 @@
 #include "display_hal.h"
 
 void power_manager_init() {
-    if (Serial) Serial.println("[POWER] Initializing Power Manager... // [DEBUG]");
+    if (Serial) Serial.println("[POWER] Initializing Power Manager (vCalibration)... // [DEBUG]");
+    
+    // Set ADC Attenuation to 11dB (allows reading up to ~3.1V on pin)
+    analogSetAttenuation(ADC_11db);
     
     // Enable RTC domain power during sleep to allow certain wakeups
     esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
@@ -59,9 +62,29 @@ void power_manager_enter_deep_sleep() {
 }
 
 float power_manager_read_battery_voltage() {
-    int raw = analogRead(PIN_VBAT_ADC);
-    float voltage = (raw / 4095.0f) * 3.3f * 2.0f;
+    static uint32_t last_v_print = 0;
+    
+    // analogReadMilliVolts() use internal factory calibration (Vref)
+    uint32_t raw_mv = analogReadMilliVolts(PIN_VBAT_ADC);
+    float voltage = (raw_mv / 1000.0f) * 1.418f; // [CALIB] Sanwa-verified Multiplier (4.09V/2884mV)
+    
+    uint32_t now = millis();
+    if (now - last_v_print > 2000) {
+        if (Serial) Serial.printf("[POWER] VBAT mV: %d | Calibrated: %.3f V // [FINAL]\n", raw_mv, voltage);
+        last_v_print = now;
+    }
     return voltage;
+}
+
+bool power_manager_is_charging() {
+    float v = power_manager_read_battery_voltage();
+    // 1. Check hardware pin (Active LOW)
+    pinMode(PIN_CHRG, INPUT_PULLUP);
+    bool pin_chrg = (digitalRead(PIN_CHRG) == LOW);
+    
+    // 2. Voltage heuristic (V > 4.4V is usually charging on SuperMini)
+    if (v > 4.35f || pin_chrg) return true;
+    return false;
 }
 
 // Persist Auto Sleep Timeout (Default: 15s)

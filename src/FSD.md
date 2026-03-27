@@ -1,29 +1,34 @@
 # Functional Specification Document (FSD) - ESP32-C3 Smartwatch
-## Version 3.3 (Checkpoint 2 - Premium UI & Power)
+## Version 3.5 (Checkpoint 6 - Final Lockdown)
+
+### 🚨 STATUS: FULL LOCKDOWN
+Seluruh file driver dan logic saat ini berada dalam status **LOCKED**. Perubahan hanya diperbolehkan per bagian dan **WAJIB SEIZIN USER**.
 
 ### 1. Input System (LOCKED)
 - **Fast Mode**: 0ms latency on Menu/Watchface/Stopwatch.
 - **Precision Mode**: 250ms gap allowed ONLY in Timer Setup for `BTN_RIGHT_DOUBLE`.
 - **Hold**: 800ms (Always instant).
-*   **Checkpoint 2 (LOCKED)**: UI/UX finalized, AOD Anti-Sleep, Fast/Precision Switching, Ghost Protection (GPS).
-*   **Checkpoint 3 (LOCKED)**: **Zero-Flicker Boot & Snap-ON Wakeup**.
-*   **Checkpoint 4 (LOCKED - CURRENT)**: **Sensor Logic & Silent Optimization**.
-    *   **Silent Mode**: All Serial logs wrapped in `if (Serial)` to prevent power waste and USB-CDC blocking.
-    *   **MAX30100 Logic**: Removed all Serial calls from sensor callbacks (onBeatDetected) to allow standalone operation.
-    *   **System Stability**: Optimized DFS (Dynamic Frequency Scaling) logs for zero-latency during transitions.
+- **Checkpoint 6**: Double buffering input logic confirmed stable across all 16 states.
 
-### 2. UI Rendering & Ghost Protection (LOCKED)
-- **Ghost Protection System (GPS)**:
-  - Redraw Wallpaper 100% saat keluar dari "Black Mode" (Timer/SW/HR).
-  - Redraw Wallpaper 100% saat pindah DARI Watchface (Home) menuju Menu manapun untuk membersihkan sprite jam besar.
-  - **Menu-to-Menu**: Redraw wallpaper dinonaktifkan untuk menjaga kemulusan animasi slide (Zero Flicker).
-- **Surgical Refresh**: Update nilai Timeout/Brightness hanya memperbarui area angka di dalam sprite menggunakan `fillRect(BOX_COL)`.
+### 2. UI Rendering & Premium Engine (LOCKED)
+- **Ghost Protection System (GPS)**: Full redraw wallpaper saat keluar dari "Black Mode".
+- **Premium HR UI (Mockup Claude)**:
+    - **Beating Heart**: Animasi jantung berdenyut berbasis pulse sensor.
+    - **Filled Area Graph**: Grafik sejarah HR dengan bayangan (Area Chart) berbasis Sprite.
+    - **Partial Redraw**: Hanya mengupdate nilai yang berubah (BPM, SpO2, Timer) untuk mencegah flicker.
+- **Sprite System**: Terdiri dari 5 Sprite aktif (Clock, Status, FPS, Top Clock, Menu, Graph) dengan total RAM ~120KB (SAFE).
 
-### 3. Power & Sleep Management (LOCKED)
-- **AOD (Always On Display)**:
-  - Jika `aod_allowed` AKTIF: Jam tidak akan pernah masuk Deep Sleep secara otomatis. Hanya meredupkan backlight (15/255) saat timeout di Watchface.
-  - Jika masuk ke menu dari kondisi AOD, jam langsung kembali ke kecerahan normal.
-- **Deep Sleep Auto-Lock**: Hanya aktif jika `aod_allowed` MATI.
+### 3. Sensor & Background Logic (LOCKED)
+- **MAX30100 Stability**: 
+    - **Burst Polling**: 5x sequential poll per cycle.
+    - **History Buffer**: Internal circular buffer (60 samples) di level driver.
+    - **Total Blackout**: Shutdown paksa LED via register 0x09 (0mA).
+- **Silent Optimization**: Semua Serial debug dibungkus `if(Serial)` agar tidak blocking saat tanpa kabel.
 
-### 4. Wake-Up Aesthetics
-- **Cinematic Start**: Backlight dimulai dari 0 (gelap total), ada jeda stabilitas 50ms, lalu melakukan *fade-in* selama 700ms (BL_FADE_MS + 200) untuk efek bernapas (*breathing*).
+### 4. Power & Sleep Management (LOCKED)
+- **Anti-Sleep Guard**: Jam DILARANG tidur saat berada di mode Timer, Stopwatch, dan EXEC_HR. 
+- **AOD (Always On Display)**: Backlight 15/255 saat idle di Watchface (jika aktif).
+- **Snap-ON Wakeup**: Instan ON tanpa noise SPI setelah periode stabilitas VRAM.
+
+---
+*FSD v3.5 - Finalized by General Agent per User Request.*

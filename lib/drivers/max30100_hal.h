@@ -1,33 +1,41 @@
-#pragma once
+#ifndef MAX30100_HAL_H
+#define MAX30100_HAL_H
 
 #include <Arduino.h>
 
 /**
- * @brief Initialize the MAX30100 sensor.
- * Lazy init - HANYA dipanggil saat masuk state EXEC_HR.
- * @return true if initialization successful, false otherwise.
+ * @brief Initialize the MAX30100 Heart Rate and SpO2 sensor.
  */
 bool max30100_hal_init();
 
 /**
- * @brief Polling function to update MAX30100 data.
- * Wajib dipanggil setiap loop selama EXEC_HR aktif.
+ * @brief Run the internal sampling and history update loop.
  */
 void max30100_hal_update();
 
 /**
- * @brief Put MAX30100 into shutdown mode to save power.
+ * @brief Put the sensor in power-down mode (Turn IR/RED LEDs off).
  */
 void max30100_hal_shutdown();
 
 /**
- * @brief Get the latest BPM (Beats Per Minute) value.
- * @return float BPM value.
+ * @brief Get the current heart rate (BPM).
  */
 float max30100_hal_get_bpm();
 
 /**
- * @brief Get the latest SpO2 (Oxygen Saturation) value.
- * @return uint8_t SpO2 percentage.
+ * @brief Get the current blood oxygen level (SpO2).
  */
 uint8_t max30100_hal_get_spo2();
+
+/**
+ * @brief Check if a heart beat has been detected.
+ */
+bool max30100_hal_check_beat();
+
+/**
+ * @brief Get the last 60 HR samples for UI graphing.
+ */
+void max30100_hal_get_history(float* out_buf);
+
+#endif

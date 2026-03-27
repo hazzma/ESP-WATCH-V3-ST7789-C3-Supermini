@@ -4,15 +4,16 @@
 #include "display_hal.h"
 #include "button_hal.h"
 #include "max30100_hal.h"
+#include "bmi160_hal.h" // Added this line
 #include "ui_manager.h"
 #include "power_manager.h"
 
 void setup() {
     // DISPLAY AGENT EMERGENCY FIX: 
     // Kill Backlight immediately at start of setup to prevent flicker during Serial delay.
-    // Pin 10 is PIN_LCD_BL (mapped in app_config.h)
     pinMode(10, OUTPUT);
     digitalWrite(10, LOW);
+    gpio_set_pull_mode(GPIO_NUM_10, GPIO_PULLDOWN_ONLY);
 
     // 1. Core Serial
     Serial.begin(115200);
@@ -22,6 +23,10 @@ void setup() {
 
     // 2. Hardware initialization
     Wire.begin(PIN_SDA, PIN_SCL);
+    // 4. BMI160 (Step Counter)
+    if (bmi160_hal_init()) {
+         if (Serial) Serial.println("Main: BMI160 Step Counter Ready // [DEBUG]");
+    }
     
     power_manager_init();
     display_hal_init();

@@ -190,6 +190,7 @@ static void draw_menu_card(TFT_eSprite& spr, AppState st, int x, int y) {
         case STATE_MENU_AOD:        title = "AOD MODE";   sub = aod_allowed ? "[ON]" : "[OFF]"; break;
         case STATE_MENU_STOPWATCH:  title = "STOPWATCH";  sub = sw_running ? "[RUNNING]" : "[HOLD TO START]"; draws_sw = true; break;
         case STATE_MENU_BRIGHTNESS: title = "BRIGHTNESS";  sub = "[HOLD TO ADJUST]"; break;
+        case STATE_MENU_SYNC:       title = "CONNECTIVITY"; sub = "[HOLD TO PAIR]"; break;
         case STATE_EXEC_STEPS:      title = "ACTIVITY";   sub = "[STEPS]"; break; 
         default: break;
     }
@@ -233,7 +234,8 @@ static void animate_slide_transition(AppState from, AppState to, int dir) {
     const uint16_t* wall = assets_get_wallpaper(); 
     static const int steps = 10; 
     
-    int target_h = (current_state == STATE_EXEC_STEPS) ? 160 : MENU_BH;
+    int target_h = (current_state == STATE_EXEC_STEPS) ? 160 : 
+                   ((current_state == STATE_SYNCING) ? 120 : MENU_BH);
     if (canvas_spr.width() != 240 || canvas_spr.height() != target_h) {
         canvas_spr.deleteSprite(); canvas_spr.createSprite(240, target_h); canvas_spr.setSwapBytes(true);
     }
@@ -274,8 +276,14 @@ void ui_manager_update() {
     clock_h = ti->tm_hour;
     clock_m = ti->tm_min;
     clock_s = ti->tm_sec;
-
+    
     bool nd = (current_state != last_rendered_state);
+    
+    static bool ble_is_syncing = false; // [DRIVER AGENT TARGET] Placeholder for real BLE flag
+    if (ble_is_syncing && current_state != STATE_SYNCING) {
+        current_state = STATE_SYNCING;
+        nd = true;
+    }
     if (bt != BTN_NONE) {
         if (Serial) Serial.printf("UI: Button Event %d detected // [DEBUG]\n", (int)bt);
         last_activity_time = now;
@@ -327,7 +335,8 @@ void ui_manager_update() {
             else if (current_state == STATE_MENU_AOD)   target = STATE_MENU_TIMER;
             else if (current_state == STATE_MENU_TIMER) target = STATE_MENU_STOPWATCH;
             else if (current_state == STATE_MENU_STOPWATCH) target = STATE_MENU_BRIGHTNESS;
-            else if (current_state == STATE_MENU_BRIGHTNESS) target = STATE_EXEC_STEPS;
+            else if (current_state == STATE_MENU_BRIGHTNESS) target = STATE_MENU_SYNC;
+            else if (current_state == STATE_MENU_SYNC) target = STATE_EXEC_STEPS;
             else if (current_state == STATE_EXEC_STEPS) target = STATE_WATCHFACE;
         }
     } else if (bt == BTN_LEFT_CLICK) {
@@ -351,7 +360,8 @@ void ui_manager_update() {
             else if (current_state == STATE_MENU_TIMER)  target = STATE_MENU_AOD;
             else if (current_state == STATE_MENU_STOPWATCH) target = STATE_MENU_TIMER;
             else if (current_state == STATE_MENU_BRIGHTNESS) target = STATE_MENU_STOPWATCH;
-            else if (current_state == STATE_EXEC_STEPS) target = STATE_MENU_BRIGHTNESS;
+            else if (current_state == STATE_MENU_SYNC) target = STATE_MENU_BRIGHTNESS;
+            else if (current_state == STATE_EXEC_STEPS) target = STATE_MENU_SYNC;
         }
     } else if (bt == BTN_RIGHT_DOUBLE) {
         if (current_state == STATE_SET_TIMER_H) { target = STATE_SET_TIMER_M; }
@@ -592,9 +602,9 @@ static void render_current_state() {
                 if (steps != last_disp_steps || last_rendered_state != STATE_EXEC_STEPS) {
                     // [UI AGENT] Removed redundant createSprite here (Handled by global guard)
                     
-                    // A. Draw Ring into Sprite (Y offset 60)
+                    // A. Draw Ring into Sprite (Y offset 60, Height 145 for ring)
                     canvas_spr.pushImage(0, -60, 240, 280, assets_get_wallpaper());
-                    int rx = 120, ry = 80; // Relative to sprite
+                    int rx = 120, ry = 75; // [UI AGENT] Centered Y=75 relative to 145h sprite
                     canvas_spr.drawCircle(rx, ry, 70, 0x18C3); 
                     float end_angle = (ratio * 360.0f) - 90.0f;
                     for (float a = -90.0f; a <= end_angle; a += 10.0f) {
@@ -609,15 +619,16 @@ static void render_current_state() {
                     canvas_spr.drawString("STEPS TODAY", rx, ry + 25);
                     canvas_spr.pushSprite(0, 60);
 
-                    // B. Draw Bottom Stats using same Sprite (Y offset 240)
-                    canvas_spr.pushImage(0, -240, 240, 280, assets_get_wallpaper()); // Crop for bottom
+                    // B. Draw Bottom Stats using small efficient Sprite (Y offset 205, Height 35)
+                    if (canvas_spr.height() != 35) { canvas_spr.deleteSprite(); canvas_spr.createSprite(240, 35); canvas_spr.setSwapBytes(true); }
+                    canvas_spr.pushImage(0, -205, 240, 280, assets_get_wallpaper()); // Surgical Crop at Y=205
                     canvas_spr.setTextDatum(TL_DATUM); canvas_spr.setTextSize(1); canvas_spr.setTextColor(TFT_WHITE);
                     char k_buf[32]; sprintf(k_buf, "%d KCAL", (int)(steps * 0.044f)); 
-                    canvas_spr.drawString(k_buf, 30, 255 - 240); // Relative Y
+                    canvas_spr.drawString(k_buf, 30, 215 - 205); // Y=215
                     canvas_spr.setTextDatum(TR_DATUM); 
                     char m_buf[32]; sprintf(m_buf, "%.1f KM", steps * 0.00075f); 
-                    canvas_spr.drawString(m_buf, 210, 255 - 240); // Relative Y
-                    canvas_spr.pushSprite(0, 240); 
+                    canvas_spr.drawString(m_buf, 210, 215 - 205); // Y=215
+                    canvas_spr.pushSprite(0, 205); 
 
                     last_disp_steps = steps;
                 }

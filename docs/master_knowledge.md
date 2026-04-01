@@ -1,5 +1,5 @@
-# MASTER KNOWLEDGE BASE — ESP32-C3 SMARTWATCH (V3.5)
-*Reference document for development phase 2 (Step Counter, BLE, App Interface)*
+# MASTER KNOWLEDGE BASE — ESP32-C3 SMARTWATCH (V6.0)
+*Reference document for development phase 4 (BLE, App Interface)*
 
 ## 1. Hardware Architecture (LOCKED)
 - **MCU**: ESP32-C3 SuperMini (Core 0 only).
@@ -36,7 +36,7 @@ Menu terbagi menjadi 16 states utama:
     2. **Wake from Sleep**: Langsung 80MHz (FREQ_MID) untuk efisiensi navigasi.
 - **Sleep Log**: Notifikasi visual di serial sebelum masuk Deep Sleep.
 
-## 6. PHASE 2: INVARIANT RULES FOR AI AGENTS 🛡️
+## 6. PHASE 4: INVARIANT RULES FOR AI AGENTS 🛡️
 - **NO ARBITRARY REFACTORS**: Jangan mengubah core logic `display_hal.cpp` atau `ui_manager.cpp` tanpa alasan optimisasi yang kuat. 
 - **SHUTDOWN PROTECTION**: Setiap sensor baru wajib memiliki fungsi `shutdown()` dan HARUS dipanggil oleh Power Manager sebelum tidur.
 - **GUARDED SERIAL**: Semua `Serial.print` WAJIB dibungkus `if (Serial)` untuk menjaga performa bus USB-CDC.
@@ -50,4 +50,13 @@ Menu terbagi menjadi 16 states utama:
 5. **HISTORY PRESERVATION**: Dokumentasi dilarang dikurangi, hanya boleh ditambah. History pengembangan harus terjaga.
 
 ---
-*Updated for Phase 2 — Built with Antigravity AI (General Agent Oversight).*
+*Updated for Phase 4 — Built with Antigravity AI (General Agent Oversight).*
+
+### 4. 240x240 Display Compatibility (Surgical Offset)
+Ditemukan bug koordinat yang menyebabkan Dashboard Steps terpotong di layar 240x240:
+*   **Ring Shift**: Pusat lingkaran digeser dari Y=80 ke **Y=75** agar radius 70 + dot 6 muat di dalam viewport sprite.
+*   **Stats Relocation**: Baris KCAL/KM dipindah dari koordinat off-screen Y=240 ke **Y=205** (Presisi di atas border bawah).
+*   **Efficiency Overdrive**: Stats bawah kini hanya menggunakan sprite 35px, menghemat transfer data LCD hingga 78% untuk baris data dinamis.
+
+---
+*Laporan selesai by UI/UX Agent - Checkpoint 9 (Connectivity Ready).*

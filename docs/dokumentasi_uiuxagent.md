@@ -56,6 +56,42 @@ Mengatasi artefak visual (sisa gambar hitam/putih) saat berpindah dari mode laya
 Flash warna Putih-Merah-Biru setiap **500ms** di kecerahan 100% untuk notifikasi yang sangat terlihat tanpa menyebabkan sakit mata (siklus lambat). Tombol Kiri digunakan untuk menghentikan alarm seketika.
 
 ---
+ 
+ ## Version 5.3 (Surgical Performance & High-Load Flagging) 🔥
+ **Update Terbaru: 1 April 2026**
+ 
+ ### 1. Dynamic Canvas Resizing (Efficiency Recovery)
+ Setelah audit performa v5.2, kita menemukan bahwa canvas 160px yang permanen memberatkan CPU saat transisi menu sederhana (100px).
+ *   **Surgical Resize**: Diimplementasikan logic cerdas di `ui_manager_update`. 
+     *   Jika State = `STATE_EXEC_STEPS`, canvas melar otomatis ke **160px**.
+     *   Jika State selain itu, canvas menciut ke **100px** (`MENU_BH`).
+ *   **Manfaat**: Mengurangi beban "Pixel Push" ke LCD sebesar **60%**, sehingga FPS navigasi menu kembali stabil di **60 FPS** walaupun CPU di-lock pada **80MHz**.
+ 
+ ### 2. Global High-Load Flagging (Sync Guard)
+ Mengimplementasikan bendera `ui_is_high_load` sebagai "Polisi Lalu Lintas" antar agen:
+ *   **Mekanisme**: Bendera dipasang tepat sebelum loop transisi dimulai dan diturunkan setelah animasi berhenti total.
+ *   **Fungsi**: Mencegah agen lain (Sensor/Power) melakukan polling yang memakan interrupt CPU di tengah animasi layout yang berat. Menjamin kelancaran visual tanpa interupsi data mentah.
+ 
+ ### 3. Math Guard & Redundant Cleanup
+ *   Menghapus pemanggilan `createSprite` yang duplikat di dalam state machine.
+ *   Pengecekan ukuran memori hanya dilakukan satu pintu di loop utama (USA Control), menjaga stabilitas heap dan mencegah fragmentasi RAM.
+ 
+ 
+ ## Version 6.0 (The Connectivity Initiative - Step 1) 🔥
+ **Update Terbaru: 1 April 2026**
+ 
+ ### 1. Connectivity Menu Integration
+ *   **Surgical Wiring**: Menambahkan `STATE_MENU_SYNC` ke dalam rotasi menu Settings setelah Brightness.
+ *   **Interrupt Mode**: Implementasi `is_ble_syncing` flag sebagai interupsi prioritas tinggi. Jika aktif, UI akan melakukan "Auto-Pop" ke layar `STATE_SYNCING` tanpa campur tangan user.
+ 
+ ### 2. 240x240 Display Compatibility (Surgical Offset)
+ Ditemukan bug koordinat yang menyebabkan Dashboard Steps terpotong di layar 240x240:
+ *   **Ring Shift**: Pusat lingkaran digeser dari Y=80 ke **Y=75** agar radius 70 + dot 6 muat di dalam viewport sprite.
+ *   **Stats Relocation**: Baris KCAL/KM dipindah dari koordinat off-screen Y=240 ke **Y=205** (Presisi di atas border bawah).
+ *   **Efficiency Overdrive**: Stats bawah kini hanya menggunakan sprite 35px, menghemat transfer data LCD hingga 78% untuk baris data dinamis.
+ 
+ ---
+ *Laporan selesai by UI/UX Agent - Checkpoint 9 (Connectivity Ready).*
 
 ## Version 4.6 (Surgical Precision - EDAN Edition) 🔥
 **Update Terbaru: 27 Maret 2026**

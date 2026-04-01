@@ -1,7 +1,7 @@
 # Functional Specification Document (FSD) - ESP32-C3 Smartwatch
-## Version 3.5 (Checkpoint 6 - Final Lockdown)
+## Version 6.0 (The Connectivity Era)
 
-### 🚨 STATUS: FULL LOCKDOWN
+### 🚨 STATUS: FINAL INTEGRATION PHASE (LOCKED)
 Seluruh file driver dan logic saat ini berada dalam status **LOCKED**. Perubahan hanya diperbolehkan per bagian dan **WAJIB SEIZIN USER**.
 
 ### 1. Input System (LOCKED)

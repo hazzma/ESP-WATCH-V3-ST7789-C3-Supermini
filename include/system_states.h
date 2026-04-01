@@ -23,5 +23,8 @@ typedef enum {
     STATE_MENU_BRIGHTNESS,
     STATE_SET_BRIGHTNESS,
     
+    STATE_MENU_SYNC,        // New: Connectivity / Sync Menu
+    STATE_SYNCING,          // New: Active Transfer Loading Screen
+    
     STATE_EXEC_STEPS
 } AppState;

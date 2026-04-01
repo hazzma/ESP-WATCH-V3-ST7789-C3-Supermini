@@ -105,8 +105,8 @@ void ui_manager_init() {
     if (top_clock_spr.created()) top_clock_spr.deleteSprite();
     if (heart_spr.created())  heart_spr.deleteSprite();
 
-    // [UI AGENT] INSANE COMPOSITOR (True Window 240x160)
-    canvas_spr.createSprite(240, 160); canvas_spr.setSwapBytes(true); 
+    // [UI AGENT] INSANE COMPOSITOR (Standard Height 100px for menu)
+    canvas_spr.createSprite(240, 100); canvas_spr.setSwapBytes(true); 
     status_spr.createSprite(65, 25);  status_spr.setSwapBytes(true);
     fps_spr.createSprite(35, 15);     fps_spr.setSwapBytes(true);
     top_clock_spr.createSprite(60, 15); top_clock_spr.setSwapBytes(true);
@@ -233,8 +233,9 @@ static void animate_slide_transition(AppState from, AppState to, int dir) {
     const uint16_t* wall = assets_get_wallpaper(); 
     static const int steps = 10; 
     
-    if (canvas_spr.width() != 240 || canvas_spr.height() != 160) {
-        canvas_spr.deleteSprite(); canvas_spr.createSprite(240, 160); canvas_spr.setSwapBytes(true);
+    int target_h = (current_state == STATE_EXEC_STEPS) ? 160 : MENU_BH;
+    if (canvas_spr.width() != 240 || canvas_spr.height() != target_h) {
+        canvas_spr.deleteSprite(); canvas_spr.createSprite(240, target_h); canvas_spr.setSwapBytes(true);
     }
 
     for (int i = 0; i <= steps; i++) {

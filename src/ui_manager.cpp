@@ -590,9 +590,7 @@ static void render_current_state() {
                 // 3. USA SURGICAL DRAWING (Zero-Flicker Ring)
                 static uint32_t last_disp_steps = 999999;
                 if (steps != last_disp_steps || last_rendered_state != STATE_EXEC_STEPS) {
-                    if (canvas_spr.width() != 240 || canvas_spr.height() != 160) {
-                        canvas_spr.deleteSprite(); canvas_spr.createSprite(240, 160); canvas_spr.setSwapBytes(true);
-                    }
+                    // [UI AGENT] Removed redundant createSprite here (Handled by global guard)
                     
                     // A. Draw Ring into Sprite (Y offset 60)
                     canvas_spr.pushImage(0, -60, 240, 280, assets_get_wallpaper());

@@ -14,4 +14,7 @@ void ble_hal_notify_hr(uint8_t bpm, uint8_t spo2);
 void ble_hal_notify_steps(uint32_t steps);
 void ble_hal_notify_battery(uint8_t percent, bool charging);
 
+// [STEP 5] Progress Tracking
+float ble_hal_get_sync_progress();
+
 #endif // BLE_HAL_H

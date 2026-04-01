@@ -194,16 +194,15 @@ static void draw_menu_card(TFT_eSprite& spr, AppState st, int x, int y) {
         case STATE_MENU_STOPWATCH:  title = "STOPWATCH";  sub = sw_running ? "[RUNNING]" : "[HOLD TO START]"; draws_sw = true; break;
         case STATE_MENU_BRIGHTNESS: title = "BRIGHTNESS";  sub = "[HOLD TO ADJUST]"; break;
         case STATE_MENU_SYNC: {
-            static float p_pulse = 0;
             if (ble_is_connected) {
                 title = "CONNECTED"; sub = "[SYNC SUCCESS]";
                 spr.fillCircle(x + MENU_BW/2, y + 25, 8, spr.color565(0, 255, 100)); // Success Green Dot
             } else if (ble_is_syncing) {
-                title = "CONNECTING..."; sub = "[HOLD TO CANCEL]";
-                p_pulse += 0.15f;
-                int pulse_w = (int)(abs(sin(p_pulse)) * (MENU_BW - 40));
-                spr.fillRoundRect(x + 20, y + 25, pulse_w, 10, 2, spr.color565(0, 180, 180));
-                spr.drawRoundRect(x + 20, y + 25, MENU_BW - 40, 10, 2, TFT_WHITE);
+                title = "SYNCING..."; sub = "[TRANSFERRING...]";
+                float p = ble_hal_get_sync_progress();
+                int pw = (int)(p * (MENU_BW - 40));
+                spr.fillRect(x + 20, y + 75, pw, 6, spr.color565(0, 180, 255)); // Sky Blue Progress
+                spr.drawRect(x + 20, y + 75, MENU_BW - 40, 6, C_DIM);
             } else {
                 title = "CONNECTIVITY"; sub = "[HOLD TO PAIR]";
             }
@@ -606,7 +605,15 @@ static void render_current_state() {
                     tft.pushImage(0, 0, 240, 60, assets_get_wallpaper()); 
                     push_top_clock(true);
                     tft.setTextDatum(MC_DATUM); tft.setTextColor(TFT_WHITE); tft.setTextSize(2); 
-                    tft.drawString("ACTIVITY", 120, 30);
+                    // [SYNC] Removed misplaced connected labels from Activity dash.
+                    
+                    // [STEP 5] Progress Bar if syncing
+                    if (ble_is_syncing) {
+                        float p = ble_hal_get_sync_progress();
+                        int pw = (int)(200 * p);
+                        tft.drawRect(20, 185, 200, 4, C_DIM);
+                        tft.fillRect(20, 185, pw, 4, 0x5D9B); // Sky Blue Progress
+                    }
                     step_warmup_timer = millis(); 
                 }
                 
@@ -728,6 +735,14 @@ static void draw_heart_icon(TFT_eSPI &tft, int cx, int cy, uint16_t color, float
 
 // [3.4] Remote Connectivity Commands
 void ui_manager_request_state(AppState st) {
+    if (is_dimmed_aod) {
+        is_dimmed_aod = false;
+        display_hal_backlight_set(brightness_ui_val);
+        power_manager_set_freq(FREQ_MID);
+    }
+    last_rendered_state = (AppState)-1; // Force full redraw on switch
+    last_min_val = -1;
+    
     if (st == STATE_EXEC_HR) {
         if (max30100_hal_init()) {
             current_state = st;

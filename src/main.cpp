@@ -8,6 +8,7 @@
 #include "ui_manager.h"
 #include "power_manager.h"
 #include "ble_hal.h" // [GUARD] Bluetooth engine
+#include <LittleFS.h> // [GUARD] File System
 
 void setup() {
     // Kill Backlight immediately
@@ -28,6 +29,7 @@ void setup() {
     power_manager_init();
     display_hal_init();
     button_hal_init();
+    LittleFS.begin(true); // [MOUNT] Expansion Storage
     ui_manager_init();
     ble_hal_init(); // [GUARD] Bluetooth engine start
     

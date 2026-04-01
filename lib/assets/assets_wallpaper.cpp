@@ -1,4 +1,6 @@
 #include "assets_wallpaper.h"
+#include <LittleFS.h>
+#include <Arduino.h>
 
 /**
  * NOTE: To prevent bootloops, this array MUST match the dimensions returned by the getters.
@@ -4210,6 +4212,34 @@ static const uint16_t WALLPAPER_DATA[67200] PROGMEM = {
 0x2A26, 0x2A06, 0x2A26, 0x2A47, 0x2A47, 0x32A8, 0x42EA, 0x3AC9, 0x3206, 0x3A87, 0x3267, 0x2226, 0x21E5, 0x29E5, 0x2184, 0x2163,   // 0x10680 (67200) pixels
  };
 
-const uint16_t* assets_get_wallpaper()        { return WALLPAPER_DATA; }
+static uint16_t* dynamic_wallpaper = nullptr;
+static bool wallpaper_cache_valid = false;
+
+const uint16_t* assets_get_wallpaper() {
+    if (LittleFS.exists("/wallpaper.bin")) {
+        if (!wallpaper_cache_valid) {
+            if (!dynamic_wallpaper) {
+                dynamic_wallpaper = (uint16_t*)malloc(240 * 280 * 2);
+            }
+            if (dynamic_wallpaper) {
+                File f = LittleFS.open("/wallpaper.bin", "r");
+                if (f) {
+                    f.read((uint8_t*)dynamic_wallpaper, 240 * 280 * 2);
+                    f.close();
+                    wallpaper_cache_valid = true;
+                    if (Serial) Serial.println("ASSETS: Wallpaper Cached from LittleFS // [READY]");
+                }
+            }
+        }
+        if (wallpaper_cache_valid && dynamic_wallpaper) return dynamic_wallpaper;
+    }
+    return WALLPAPER_DATA; 
+}
+
+void assets_wallpaper_clear_cache() {
+    wallpaper_cache_valid = false;
+    if (Serial) Serial.println("ASSETS: Cache Flushed // [UPDATE]");
+}
+
 uint16_t        assets_get_wallpaper_width()  { return 240; }
 uint16_t        assets_get_wallpaper_height() { return 280; }

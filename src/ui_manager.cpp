@@ -9,6 +9,7 @@
 #include "assets_icons.h"
 #include <sys/time.h>
 #include <time.h>
+#include "ble_hal.h" // [GUARD] Synchronous Data Reporting
 
 // States extension (Internal)
 #define STATE_TIMER_ALARM 99 
@@ -16,7 +17,7 @@
 // Persist - RTC_DATA_ATTR
 static RTC_DATA_ATTR bool aod_allowed = false; 
 static RTC_DATA_ATTR int brightness_ui_val = 127; 
-static RTC_DATA_ATTR AppState current_state = STATE_WATCHFACE;
+RTC_DATA_ATTR AppState current_state = STATE_WATCHFACE;
 
 // [UI AGENT] Claude Premium HR Colors & Vars
 #define C_BG        0x0000 
@@ -44,7 +45,9 @@ static RTC_DATA_ATTR unsigned long sw_elapsed_ms = 0;
 static RTC_DATA_ATTR bool sw_running = false;
 
 // Runtime
-static bool ui_is_high_load = false; // [DISPLAY AGENT] High CPU/RAM load flag
+bool ui_is_high_load = false; // [DISPLAY AGENT] High CPU/RAM load flag
+bool ble_is_syncing = false;
+bool ble_is_connected = false; // [DRIVER AGENT TARGET] Connection established flag
 static uint16_t ui_cpu_freq = FREQ_MID; // [UI AGENT] Track current speed
 static bool is_dimmed_aod = false; 
 static unsigned long last_activity_time = 0;
@@ -190,7 +193,22 @@ static void draw_menu_card(TFT_eSprite& spr, AppState st, int x, int y) {
         case STATE_MENU_AOD:        title = "AOD MODE";   sub = aod_allowed ? "[ON]" : "[OFF]"; break;
         case STATE_MENU_STOPWATCH:  title = "STOPWATCH";  sub = sw_running ? "[RUNNING]" : "[HOLD TO START]"; draws_sw = true; break;
         case STATE_MENU_BRIGHTNESS: title = "BRIGHTNESS";  sub = "[HOLD TO ADJUST]"; break;
-        case STATE_MENU_SYNC:       title = "CONNECTIVITY"; sub = "[HOLD TO PAIR]"; break;
+        case STATE_MENU_SYNC: {
+            static float p_pulse = 0;
+            if (ble_is_connected) {
+                title = "CONNECTED"; sub = "[SYNC SUCCESS]";
+                spr.fillCircle(x + MENU_BW/2, y + 25, 8, spr.color565(0, 255, 100)); // Success Green Dot
+            } else if (ble_is_syncing) {
+                title = "CONNECTING..."; sub = "[HOLD TO CANCEL]";
+                p_pulse += 0.15f;
+                int pulse_w = (int)(abs(sin(p_pulse)) * (MENU_BW - 40));
+                spr.fillRoundRect(x + 20, y + 25, pulse_w, 10, 2, spr.color565(0, 180, 180));
+                spr.drawRoundRect(x + 20, y + 25, MENU_BW - 40, 10, 2, TFT_WHITE);
+            } else {
+                title = "CONNECTIVITY"; sub = "[HOLD TO PAIR]";
+            }
+            break;
+        }
         case STATE_EXEC_STEPS:      title = "ACTIVITY";   sub = "[STEPS]"; break; 
         default: break;
     }
@@ -279,10 +297,14 @@ void ui_manager_update() {
     
     bool nd = (current_state != last_rendered_state);
     
-    static bool ble_is_syncing = false; // [DRIVER AGENT TARGET] Placeholder for real BLE flag
-    if (ble_is_syncing && current_state != STATE_SYNCING) {
-        current_state = STATE_SYNCING;
+    // [UI AGENT] Real-time Status Watcher for Bluetooth Events
+    static bool last_ble_connected = false;
+    static bool last_ble_syncing = false;
+    if (ble_is_connected != last_ble_connected || ble_is_syncing != last_ble_syncing) {
         nd = true;
+        last_ble_connected = ble_is_connected;
+        last_ble_syncing = ble_is_syncing;
+        if (Serial) Serial.println("UI: Status Change detected // [REFRESH]");
     }
     if (bt != BTN_NONE) {
         if (Serial) Serial.printf("UI: Button Event %d detected // [DEBUG]\n", (int)bt);
@@ -382,11 +404,13 @@ void ui_manager_update() {
         else if (current_state == STATE_EXEC_TIMER)  { timer_running = false; target = STATE_MENU_TIMER; }
         else if (current_state == STATE_MENU_STOPWATCH) { if (!sw_running) { sw_start_ms = now; sw_elapsed_ms = 0; sw_running = true; } target = STATE_EXEC_STOPWATCH; }
         else if (current_state == STATE_EXEC_STOPWATCH) { target = STATE_MENU_STOPWATCH; }
+        else if (current_state == STATE_MENU_SYNC) { ble_is_syncing = !ble_is_syncing; nd = true; } // [UI AGENT] Toggle Mode
     } else if (bt == BTN_LEFT_HOLD) {
         if (current_state >= STATE_SET_TIMER_H && current_state <= STATE_EXEC_TIMER) target = STATE_MENU_TIMER;
         else if (current_state == (int)STATE_TIMER_ALARM) { display_hal_backlight_set(brightness_ui_val); target = STATE_MENU_TIMER; }
         else if (current_state == STATE_EXEC_STOPWATCH) target = STATE_MENU_STOPWATCH;
         else if (current_state == STATE_EXEC_HR) { max30100_hal_shutdown(); target = STATE_MENU_HR; }
+        else if (current_state == STATE_SYNCING) target = STATE_MENU_SYNC; // [UI AGENT] Emergency Exit for Testing
         else power_manager_enter_deep_sleep();
     }
 
@@ -397,7 +421,7 @@ void ui_manager_update() {
         else button_hal_set_double_click(false);
     }
 
-    uint32_t iv = (current_state == STATE_EXEC_TIMER || current_state == STATE_EXEC_STOPWATCH || (int)current_state == STATE_TIMER_ALARM) ? 50 : 2000;
+    uint32_t iv = (current_state == STATE_EXEC_TIMER || current_state == STATE_EXEC_STOPWATCH || (int)current_state == STATE_TIMER_ALARM || (current_state == STATE_MENU_SYNC && ble_is_syncing)) ? 50 : 2000;
     if (current_state == STATE_EXEC_HR || current_state == STATE_SET_BRIGHTNESS || current_state == STATE_SET_TIMEOUT) iv = 100;
     if (current_state == STATE_WATCHFACE) iv = 500;
     if (current_state == STATE_EXEC_STEPS) iv = 100; // Fast UI for animation
@@ -453,8 +477,9 @@ static void render_current_state() {
             draw_heart_icon(heart_spr, 16, 14, (beat_phase > 0) ? 0xC800 : C_DIM, h_scale); // Elegant Red: 0xC800
             heart_spr.pushSprite(104, 32);
 
-            // 2. BPM VALUE (CENTERED)
+            // 2. BPM & SPO2 VALUE (CENTERED)
             uint8_t bpm = (uint8_t)max30100_hal_get_bpm();
+            uint8_t spo2 = max30100_hal_get_spo2(); 
             if (bpm != last_bpm_v || last_rendered_state != STATE_EXEC_HR) {
                 tft.fillRect(0, 65, 240, 50, C_BG);
                 tft.setTextDatum(TC_DATUM); tft.setTextColor(TFT_WHITE); tft.setTextSize(4); 
@@ -464,6 +489,7 @@ static void render_current_state() {
                 tft.drawString("BPM", 120, 108);
                 tft.drawFastHLine(16, 122, 208, C_DIVIDER);
                 last_bpm_v = bpm;
+                ble_hal_notify_hr(bpm, spo2); // [SYNC] Live stream to app
             }
 
             // 3. WAVEFORM GRAPH (10Hz UPDATE)
@@ -489,7 +515,7 @@ static void render_current_state() {
             }
 
             // 4. BOTTOM SPO2 & TIMER (Reuse Canvas)
-            uint8_t spo2 = max30100_hal_get_spo2(); 
+            spo2 = max30100_hal_get_spo2(); 
             uint32_t elap_s = (now - hr_start_time) / 1000;
             static uint32_t last_timer_v = 999;
             
@@ -698,4 +724,25 @@ static void draw_heart_icon(TFT_eSPI &tft, int cx, int cy, uint16_t color, float
     tft.fillCircle(cx + r, cy_adj, r, color);
     // Fuller triangle tip (less sharp)
     tft.fillTriangle(cx - r*2, cy_adj, cx + r*2, cy_adj, cx, cy + (int)(13 * scale), color);
+}
+
+// [3.4] Remote Connectivity Commands
+void ui_manager_request_state(AppState st) {
+    if (st == STATE_EXEC_HR) {
+        if (max30100_hal_init()) {
+            current_state = st;
+            hr_start_time = millis();
+        }
+    } else {
+        current_state = st;
+    }
+}
+
+// [3.3] Sensor Reporting on Request
+void ui_manager_report_sensors(uint8_t command) {
+    if (command == 0x05) { // Battery
+        ble_hal_notify_battery(get_battery_percentage(), power_manager_is_charging());
+    } else if (command == 0x04) { // Steps
+        ble_hal_notify_steps(bmi160_hal_get_steps());
+    }
 }

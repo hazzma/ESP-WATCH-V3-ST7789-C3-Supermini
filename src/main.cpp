@@ -7,6 +7,7 @@
 #include "bmi160_hal.h"
 #include "ui_manager.h"
 #include "power_manager.h"
+#include "ble_hal.h" // [GUARD] Bluetooth engine
 
 void setup() {
     // Kill Backlight immediately
@@ -28,8 +29,9 @@ void setup() {
     display_hal_init();
     button_hal_init();
     ui_manager_init();
+    ble_hal_init(); // [GUARD] Bluetooth engine start
     
-    if (Serial) Serial.println("System: Ready. // [DEBUG]");
+    if (Serial) Serial.println("System: Ready for BLE. // [DEBUG]");
 }
 
 void loop() {

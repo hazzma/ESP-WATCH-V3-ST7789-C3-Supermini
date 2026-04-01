@@ -30,3 +30,15 @@ bool ui_manager_is_high_load();
  * @return Frequency in MHz.
  */
 uint16_t ui_manager_get_cpu_freq();
+
+/**
+ * @brief Remotely request a state change (e.g., from BLE command).
+ * @param st Target state.
+ */
+void ui_manager_request_state(AppState st);
+
+/**
+ * @brief Trigger a sensor data report to the BLE app.
+ * @param command 0x04 for steps, 0x05 for battery.
+ */
+void ui_manager_report_sensors(uint8_t command);

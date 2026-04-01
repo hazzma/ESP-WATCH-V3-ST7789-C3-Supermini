@@ -81,6 +81,11 @@ static void writeReg(uint8_t reg, uint8_t val) {
 
 bool bmi160_hal_init() {
     bool is_wake = (esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_UNDEFINED);
+    
+    // [UI AGENT] I2C Safety Guard
+    Wire.setTimeOut(100); 
+    Wire.beginTransmission(BMI160_ADDR);
+    if (Wire.endTransmission() != 0) return false;
 
     // 1. Verify Chip ID
     uint8_t chip_id = readReg(REG_CHIP_ID);

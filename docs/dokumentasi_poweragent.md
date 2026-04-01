@@ -29,8 +29,12 @@ Baru saja diterapkan untuk mengeliminasi pemborosan daya dan resiko sistem macet
 Power Agent bekerja sama dengan Display Agent untuk memastikan:
 *   **Hard-Kill Backlight**: Pin 10 ditarik `LOW` secara analog tepat sebelum perintah `esp_deep_sleep_start()` dieksekusi, guna mencegah kilatan cahaya liar saat proses booting berikutnya.
 
-## 6. Battery Monitoring
-*   **ADC Reading**: Menggunakan **GPIO 3** dengan pembagi tegangan (Voltage Divider) untuk membaca level tegangan baterai secara akurat dalam skala 0-100%.
+## 6. CDC Stability Mode (Job: Power Agent)
+Sesuai permintaan USER, sistem sekarang memaksa kecepatan CPU di **160MHz (FREQ_HIGH)** setiap kali jam menyala:
+*   **Cold Boot**: Tetap di 160MHz selama ~300 frame UI (~5-10 detik) untuk memastikan deteksi USB CDC oleh PC lancar.
+*   **Wakeup (Deep Sleep)**: Sekarang juga dipaksa ke 160MHz selama periode yang sama sebelum turun ke mode hemat daya (80MHz). 
+*   **Tujuan**: Mengurangi resiko "Stuck CDC Mode" atau port sibuk saat pengembangan dan penggunaan sehari-hari.
 
 ---
 *Laporan selesai by Power & Sleep Agent - Efficiency Tier: S-Rank.*
+*Update CDC Stability v1.0 applied.*

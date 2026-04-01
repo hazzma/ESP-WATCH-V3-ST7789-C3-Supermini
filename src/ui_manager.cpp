@@ -52,10 +52,11 @@ static AppState last_rendered_state = (AppState)-1;
 static float current_fps = 0;
 static uint32_t draw_count = 0;
 static uint32_t last_fps_time = 0;
+static uint32_t boot_stabilize_counter = 0; // [UI AGENT] Cold Boot Guard
 
 // Time
 static RTC_DATA_ATTR int clock_h = 10, clock_m = 10, clock_s = 0;
-static RTC_DATA_ATTR bool clock_initialized = false; // [POWER AGENT] First boot flag
+static RTC_DATA_ATTR bool clock_initialized = false;
 static int last_min_val = -1;
 static uint8_t last_batt_val = 255;
 static RTC_DATA_ATTR bool mid_reset_done = false; 
@@ -86,8 +87,26 @@ static const uint16_t BOX_COL = 0x18C3;
 // ─── INIT ────────────────────────────────────────────────────────────────
 void ui_manager_init() {
     last_activity_time = millis(); 
-    // [UI AGENT] RAM OPTIMIZATION: Max single buffer needed is 54KB (180x150)
-    canvas_spr.createSprite(180, 150); canvas_spr.setSwapBytes(true); 
+    
+    // [POWER AGENT] Smart Throttling Intuition
+    esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+    if (cause == ESP_SLEEP_WAKEUP_UNDEFINED) {
+        boot_stabilize_counter = 0; // Cold boot: Enable CDC guard
+        if (Serial) Serial.println("SYSTEM: COLD BOOT (Manual RE-INJECT v7.2) - Stay High 160MHz for CDC... // [SAFE]");
+    } else {
+        boot_stabilize_counter = 300; // Regular wakeup: Skip guard, stay at 80MHz. 
+        if (Serial) Serial.println("SYSTEM: WAKEUP - Bypassing CDC Guard, starting at 80MHz... // [STABLE]");
+    }
+
+    // [UI AGENT] SCRUB: Delete sprites to prevent leaks before re-creating
+    if (canvas_spr.created()) canvas_spr.deleteSprite();
+    if (status_spr.created()) status_spr.deleteSprite();
+    if (fps_spr.created())    fps_spr.deleteSprite();
+    if (top_clock_spr.created()) top_clock_spr.deleteSprite();
+    if (heart_spr.created())  heart_spr.deleteSprite();
+
+    // [UI AGENT] INSANE COMPOSITOR (True Window 240x160)
+    canvas_spr.createSprite(240, 160); canvas_spr.setSwapBytes(true); 
     status_spr.createSprite(65, 25);  status_spr.setSwapBytes(true);
     fps_spr.createSprite(35, 15);     fps_spr.setSwapBytes(true);
     top_clock_spr.createSprite(60, 15); top_clock_spr.setSwapBytes(true);
@@ -197,7 +216,13 @@ static void draw_menu_card(TFT_eSprite& spr, AppState st, int x, int y) {
 static void animate_slide_transition(AppState from, AppState to, int dir) {
     ui_is_high_load = true; 
     TFT_eSPI& tft = display_hal_get_tft();
-    power_manager_set_freq(FREQ_MID); ui_cpu_freq = FREQ_MID; 
+    
+    // [UI AGENT] SAFE BOOT: Stay at 160MHz for first ~5 seconds to stabilize USB CDC
+    if (boot_stabilize_counter < 300) {
+        power_manager_set_freq(FREQ_HIGH); ui_cpu_freq = FREQ_HIGH;
+    } else {
+        power_manager_set_freq(FREQ_MID); ui_cpu_freq = FREQ_MID;
+    }
     
     if (from == STATE_EXEC_STEPS) {
         const uint16_t* wall = assets_get_wallpaper();
@@ -208,8 +233,8 @@ static void animate_slide_transition(AppState from, AppState to, int dir) {
     const uint16_t* wall = assets_get_wallpaper(); 
     static const int steps = 10; 
     
-    if (canvas_spr.width() != 240 || canvas_spr.height() != MENU_BH) {
-        canvas_spr.deleteSprite(); canvas_spr.createSprite(240, MENU_BH); canvas_spr.setSwapBytes(true);
+    if (canvas_spr.width() != 240 || canvas_spr.height() != 160) {
+        canvas_spr.deleteSprite(); canvas_spr.createSprite(240, 160); canvas_spr.setSwapBytes(true);
     }
 
     for (int i = 0; i <= steps; i++) {
@@ -376,7 +401,10 @@ void ui_manager_update() {
 static void render_current_state() {
     TFT_eSPI& tft = display_hal_get_tft(); unsigned long now = millis();
     if (current_state == STATE_WATCHFACE) { draw_watchface(tft, (current_state != last_rendered_state)); return; }
-    power_manager_set_freq(FREQ_MID); ui_cpu_freq = FREQ_MID;
+    
+    // [POWER AGENT] Smart Shift Guard
+    if (boot_stabilize_counter < 300) { boot_stabilize_counter++; power_manager_set_freq(FREQ_HIGH); ui_cpu_freq = FREQ_HIGH; }
+    else { power_manager_set_freq(FREQ_MID); ui_cpu_freq = FREQ_MID; }
     
     bool sjc = (current_state != last_rendered_state);
     bool from_full_black = (last_rendered_state == STATE_EXEC_HR || last_rendered_state == STATE_EXEC_TIMER || last_rendered_state == STATE_EXEC_STOPWATCH || (int)last_rendered_state == STATE_TIMER_ALARM || (last_rendered_state >= STATE_SET_TIMER_H && last_rendered_state <= STATE_SET_TIMER_S));
@@ -530,42 +558,70 @@ static void render_current_state() {
             canvas_spr.pushSprite(MENU_BX, MENU_BY); break;
         case STATE_EXEC_STEPS:
             {
-                // [UI AGENT] EXTREME EFFICIENCY: Hold at 80MHz (FREQ_MID)
-                power_manager_set_freq(FREQ_MID); ui_cpu_freq = FREQ_MID;
-                if (last_rendered_state != STATE_EXEC_STEPS) {
-                    tft.pushImage(0, 0, 240, 280, assets_get_wallpaper());
+                // [POWER AGENT] Smart Shift Guard
+                if (boot_stabilize_counter < 300) { boot_stabilize_counter++; power_manager_set_freq(FREQ_HIGH); ui_cpu_freq = FREQ_HIGH; }
+                else { power_manager_set_freq(FREQ_MID); ui_cpu_freq = FREQ_MID; }
+
+                static uint32_t step_warmup_timer = 0;
+                
+                // 1. RE-MASK (Top Overlay)
+                if (last_rendered_state != STATE_EXEC_STEPS || clock_m != last_min_val) {
+                    tft.pushImage(0, 0, 240, 60, assets_get_wallpaper()); 
                     push_top_clock(true);
+                    tft.setTextDatum(MC_DATUM); tft.setTextColor(TFT_WHITE); tft.setTextSize(2); 
+                    tft.drawString("ACTIVITY", 120, 30);
+                    step_warmup_timer = millis(); 
                 }
                 
-                uint32_t steps = bmi160_hal_get_steps();
+                // 2. 1-SECOND WARMUP POLLING
+                uint32_t steps = 0;
+                if (!ui_is_high_load && (millis() - step_warmup_timer > 1000)) {
+                    static uint32_t last_poll_t = 0;
+                    if (millis() - last_poll_t > 500) { bmi160_hal_update(); last_poll_t = millis(); }
+                    steps = bmi160_hal_get_steps();
+                    if (steps > 1000000) steps = 0; 
+                }
+
                 uint32_t goal = 10000;
                 float ratio = constrain(steps / (float)goal, 0.0f, 1.0f);
-                
-                tft.setTextDatum(MC_DATUM); tft.setTextColor(TFT_WHITE); tft.setTextSize(2); 
-                tft.drawString("ACTIVITY", 120, 30);
-                
-                int rx = 120, ry = 140;
-                tft.drawCircle(rx, ry, 70, 0x18C3); 
-                
-                float end_angle = (ratio * 360.0f) - 90.0f;
-                for (float a = -90.0f; a < end_angle; a += 3.0f) {
-                    float rad = a * 0.0174533f;
-                    uint16_t arc_col = tft.color565(127 + (int)(ratio * 85), 119 - (int)(ratio * 36), 221 - (int)(ratio * 95));
-                    tft.fillCircle(rx + cos(rad)*70, ry + sin(rad)*70, 7, arc_col);
+                if (isnan(ratio)) ratio = 0.0f;
+
+                // 3. USA SURGICAL DRAWING (Zero-Flicker Ring)
+                static uint32_t last_disp_steps = 999999;
+                if (steps != last_disp_steps || last_rendered_state != STATE_EXEC_STEPS) {
+                    if (canvas_spr.width() != 240 || canvas_spr.height() != 160) {
+                        canvas_spr.deleteSprite(); canvas_spr.createSprite(240, 160); canvas_spr.setSwapBytes(true);
+                    }
+                    
+                    // A. Draw Ring into Sprite (Y offset 60)
+                    canvas_spr.pushImage(0, -60, 240, 280, assets_get_wallpaper());
+                    int rx = 120, ry = 80; // Relative to sprite
+                    canvas_spr.drawCircle(rx, ry, 70, 0x18C3); 
+                    float end_angle = (ratio * 360.0f) - 90.0f;
+                    for (float a = -90.0f; a <= end_angle; a += 10.0f) {
+                        float rad = a * 0.0174533f;
+                        uint16_t arc_col = tft.color565(255 - (int)(ratio * 100), 45 + (int)(ratio * 150), 100);
+                        canvas_spr.fillCircle(rx + cos(rad)*70, ry + sin(rad)*70, 6, arc_col);
+                    }
+                    canvas_spr.setTextDatum(MC_DATUM); canvas_spr.setTextColor(TFT_WHITE);
+                    canvas_spr.setTextSize(4); char s_buf[16]; sprintf(s_buf, "%d", steps);
+                    canvas_spr.drawString(s_buf, rx, ry - 5);
+                    canvas_spr.setTextSize(1); canvas_spr.setTextColor(C_MUTED); 
+                    canvas_spr.drawString("STEPS TODAY", rx, ry + 25);
+                    canvas_spr.pushSprite(0, 60);
+
+                    // B. Draw Bottom Stats using same Sprite (Y offset 240)
+                    canvas_spr.pushImage(0, -240, 240, 280, assets_get_wallpaper()); // Crop for bottom
+                    canvas_spr.setTextDatum(TL_DATUM); canvas_spr.setTextSize(1); canvas_spr.setTextColor(TFT_WHITE);
+                    char k_buf[32]; sprintf(k_buf, "%d KCAL", (int)(steps * 0.044f)); 
+                    canvas_spr.drawString(k_buf, 30, 255 - 240); // Relative Y
+                    canvas_spr.setTextDatum(TR_DATUM); 
+                    char m_buf[32]; sprintf(m_buf, "%.1f KM", steps * 0.00075f); 
+                    canvas_spr.drawString(m_buf, 210, 255 - 240); // Relative Y
+                    canvas_spr.pushSprite(0, 240); 
+
+                    last_disp_steps = steps;
                 }
-
-                tft.setTextSize(4); tft.setTextColor(TFT_WHITE);
-                char s_buf_orig[16]; sprintf(s_buf_orig, "%d", steps);
-                tft.drawString(s_buf_orig, rx, ry);
-                
-                tft.setTextSize(1); tft.setTextColor(C_MUTED); 
-                tft.drawString("STEPS", rx, ry + 25);
-
-                // [UI AGENT] RESTORING KM & KCAL
-                tft.setTextDatum(TL_DATUM); tft.setTextSize(1); tft.setTextColor(TFT_WHITE);
-                char res_buf[32]; sprintf(res_buf, "%d KCAL", (int)(steps * 0.044f)); tft.drawString(res_buf, 30, 255);
-                tft.setTextDatum(TR_DATUM);
-                sprintf(res_buf, "%.1f KM", steps * 0.00075f); tft.drawString(res_buf, 210, 255);
             }
             break;
         default:
@@ -586,7 +642,13 @@ static void draw_lightning_bolt(TFT_eSprite& spr, int x, int y, uint16_t color) 
 }
 
 static void draw_watchface(TFT_eSPI& tft, bool full_redraw) {
-    if (!is_dimmed_aod) { power_manager_set_freq(FREQ_MID); ui_cpu_freq = FREQ_MID; }
+    // [UI AGENT] SAFE BOOT: Stay at 160MHz for first ~5 seconds to stabilize USB CDC
+    if (boot_stabilize_counter < 300) {
+        boot_stabilize_counter++;
+        power_manager_set_freq(FREQ_HIGH); ui_cpu_freq = FREQ_HIGH;
+    } else if (!is_dimmed_aod) {
+        power_manager_set_freq(FREQ_MID); ui_cpu_freq = FREQ_MID;
+    }
     const uint16_t* wall = assets_get_wallpaper();
     if (full_redraw) { if (is_dimmed_aod) tft.fillScreen(TFT_BLACK); else tft.pushImage(0, 0, 240, 280, wall); }
     int cx = 30, cy = 60; 

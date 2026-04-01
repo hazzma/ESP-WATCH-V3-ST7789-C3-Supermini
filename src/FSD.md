@@ -29,6 +29,10 @@ Seluruh file driver dan logic saat ini berada dalam status **LOCKED**. Perubahan
 - **Anti-Sleep Guard**: Jam DILARANG tidur saat berada di mode Timer, Stopwatch, dan EXEC_HR. 
 - **AOD (Always On Display)**: Backlight 15/255 saat idle di Watchface (jika aktif).
 - **Snap-ON Wakeup**: Instan ON tanpa noise SPI setelah periode stabilitas VRAM.
+- **Smart Frequency Guard**: 
+    - **160MHz (Peak)**: Hanya saat Cold Boot (Power-on) selama 5-10 detik untuk stabilisasi USB CDC.
+    - **80MHz (Cruise)**: Langsung aktif saat Wakeup dari Sleep untuk efisiensi maksimal dan sinkronisasi bus.
+- **Sleep Awareness**: Sistem memberikan log notifikasi jelas di Serial sebelum memasuki Deep Sleep.
 
 ---
 *FSD v3.5 - Finalized by General Agent per User Request.*

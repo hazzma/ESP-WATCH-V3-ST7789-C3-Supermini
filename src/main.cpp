@@ -14,7 +14,7 @@ void setup() {
     digitalWrite(10, LOW);
     
     Serial.begin(115200);
-    delay(500); 
+    delay(800); 
 
     // Hardware initialization
     Wire.begin(PIN_SDA, PIN_SCL);

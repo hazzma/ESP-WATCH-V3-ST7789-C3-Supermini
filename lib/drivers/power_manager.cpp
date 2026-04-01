@@ -16,8 +16,15 @@ void power_manager_init() {
     // Enable RTC domain power during sleep to allow certain wakeups
     esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
     
-    // Set initial frequency (standard 80MHz for startup)
-    power_manager_set_freq(FREQ_MID);
+    // [POWER AGENT] Smart Logic: 
+    // - Cold Boot (UNDEFINED): Stay at 160MHz for CDC initial handshake stability.
+    // - Regular Wakeup: Skip 160MHz, go straight to 80MHz (Sync PWM/SPI Bus).
+    esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+    if (cause == ESP_SLEEP_WAKEUP_UNDEFINED) {
+        power_manager_set_freq(FREQ_HIGH); // Initial peak for CDC
+    } else {
+        power_manager_set_freq(FREQ_MID);  // Direct to cruise speed
+    }
 }
 
 void power_manager_set_freq(int mhz) {
@@ -56,7 +63,11 @@ void power_manager_enter_deep_sleep() {
     esp_deep_sleep_enable_gpio_wakeup(1ULL << PIN_BTN_RIGHT, ESP_GPIO_WAKEUP_GPIO_LOW);
 
     // 8. esp_deep_sleep_start() — RULE-001
-    if (Serial) Serial.println("[POWER] System entering Deep Sleep now. // [DEBUG]");
+    if (Serial) {
+        Serial.println("\n[!] ========================================");
+        Serial.println("[!]      SYSTEM: ENTERING DEEP SLEEP        ");
+        Serial.println("[!] ========================================\n");
+    }
     delay(100);
     esp_deep_sleep_start();
 }

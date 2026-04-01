@@ -31,6 +31,10 @@ Menu terbagi menjadi 16 states utama:
 ## 5. Power Policy (power_manager.cpp)
 - **Anti-Sleep Guard**: Sistem deteksi aktivitas aktif yang mencegah auto-sleep jika user sedang di dalam mode pengukuran (HR) atau timer aktif.
 - **AOD Support**: Backlight dimming (15/255) sebagai alternatif Deep Sleep jika user mengaktifkan mode AOD.
+- **Smart Frequency Policy**:
+    1. **Cold Boot**: 160MHz (10 detik) untuk CDC Handshaking.
+    2. **Wake from Sleep**: Langsung 80MHz (FREQ_MID) untuk efisiensi navigasi.
+- **Sleep Log**: Notifikasi visual di serial sebelum masuk Deep Sleep.
 
 ## 6. PHASE 2: INVARIANT RULES FOR AI AGENTS 🛡️
 - **NO ARBITRARY REFACTORS**: Jangan mengubah core logic `display_hal.cpp` atau `ui_manager.cpp` tanpa alasan optimisasi yang kuat. 

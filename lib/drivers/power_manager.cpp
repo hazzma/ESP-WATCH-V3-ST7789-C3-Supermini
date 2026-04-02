@@ -77,11 +77,25 @@ float power_manager_read_battery_voltage() {
     
     // analogReadMilliVolts() use internal factory calibration (Vref)
     uint32_t raw_mv = analogReadMilliVolts(PIN_VBAT_ADC);
-    float voltage = (raw_mv / 1000.0f) * 1.418f; // [CALIB] Sanwa-verified Multiplier (4.09V/2884mV)
+    
+    // [CALIB 2-POINT] Interpolation (Sanwa Lab Verified Final - v6.5.1)
+    // Point 1: 1964mV -> 3.90V | Point 2: 2061mV -> 4.10V
+    float voltage = 3.90f + ((float)raw_mv - 1964.0f) * 0.0020618f;
     
     uint32_t now = millis();
     if (now - last_v_print > 2000) {
-        if (Serial) Serial.printf("[POWER] VBAT mV: %d | Calibrated: %.3f V // [FINAL]\n", raw_mv, voltage);
+        if (Serial) {
+            // [DIAGNOSTIC] Sanwa v6.5.1 Consistent Curve
+            float v_log = voltage;
+            int pct = 0;
+            if (v_log >= 4.10f) pct = 100;
+            else if (v_log <= 3.35f) pct = 0;
+            else if (v_log > 3.90f) pct = (int)(80 + (v_log - 3.90f) / (4.10f - 3.90f) * 20);
+            else if (v_log > 3.65f) pct = (int)(40 + (v_log - 3.65f) / (3.90f - 3.65f) * 40);
+            else pct = (int)((v_log - 3.35f) / (3.65f - 3.35f) * 40);
+
+            Serial.printf("[POWER] ADC: %dmV | VBAT: %.3fV | BATT: %d%% // [DIAGNOSTIC]\n", raw_mv, voltage, pct);
+        }
         last_v_print = now;
     }
     return voltage;
@@ -93,8 +107,8 @@ bool power_manager_is_charging() {
     pinMode(PIN_CHRG, INPUT_PULLUP);
     bool pin_chrg = (digitalRead(PIN_CHRG) == LOW);
     
-    // 2. Voltage heuristic (V > 4.4V is usually charging on SuperMini)
-    if (v > 4.35f || pin_chrg) return true;
+    // 2. Voltage heuristic (V > 4.16V is definitely charging on SuperMini/Aneng)
+    if (v > 4.16f || pin_chrg) return true;
     return false;
 }
 

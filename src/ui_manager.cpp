@@ -718,7 +718,21 @@ static void draw_watchface(TFT_eSPI& tft, bool full_redraw) {
     last_batt_val = batt; last_min_val = clock_m;
 }
 
-static uint8_t get_battery_percentage() { float v = power_manager_read_battery_voltage(); if (v >= 4.10) return 100; if (v <= 3.35) return 0; return (uint8_t)((v - 3.40) / (4.20 - 3.40) * 100); }
+static uint8_t get_battery_percentage() { 
+    float v = power_manager_read_battery_voltage(); 
+    bool charging = power_manager_is_charging();
+    
+    // [ANTI-SPIKE] Sanwa-observed jump: 0.27V. Using -0.25V compensation.
+    float real_v = charging ? (v - 0.25f) : v;
+    
+    if (real_v >= 4.10f) return 100; // Sanwa 4.10V anchor
+    if (real_v <= 3.35f) return 0;
+    
+    // [REAL CURVE] Li-ion Plateau mapping
+    if (real_v > 3.90f) return (uint8_t)(80 + (real_v - 3.90f) / (4.10f - 3.90f) * 20);
+    if (real_v > 3.65f) return (uint8_t)(40 + (real_v - 3.65f) / (3.90f - 3.65f) * 40);
+    return (uint8_t)((real_v - 3.35f) / (3.65f - 3.35f) * 40);
+}
 bool ui_manager_is_aod_enabled() { return aod_allowed; }
 bool ui_manager_is_high_load() { return ui_is_high_load; }
 uint16_t ui_manager_get_cpu_freq() { return ui_cpu_freq; }
@@ -740,6 +754,12 @@ void ui_manager_request_state(AppState st) {
         display_hal_backlight_set(brightness_ui_val);
         power_manager_set_freq(FREQ_MID);
     }
+    
+    // [POWER GUARD] Ensure sensor is off if leaving HR monitoring
+    if (current_state == STATE_EXEC_HR && st != STATE_EXEC_HR) {
+        max30100_hal_shutdown();
+    }
+
     last_rendered_state = (AppState)-1; // Force full redraw on switch
     last_min_val = -1;
     

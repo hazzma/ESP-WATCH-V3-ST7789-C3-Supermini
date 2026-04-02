@@ -33,6 +33,7 @@ static BLECharacteristic* pWallChar = nullptr;
 static File wallFile;
 static uint32_t expectedSize = 0;
 static uint32_t currentTotalSize = 0;
+static uint16_t nextExpectedChunk = 0; // [SYNC GUARD]
 
 class MyServerCallbacks : public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) {
@@ -87,16 +88,29 @@ class WallpaperCallbacks : public BLECharacteristicCallbacks {
             uint16_t chunkIdx = data[0] | (data[1] << 8);
             uint16_t len = data[4] | (data[5] << 8);
             
-            if (len > 0) {
-                wallFile.write(&data[6], len);
-                currentTotalSize += len;
-                
-                // Reply ACK 0x06
-                uint8_t ack = 0x06;
-                pWallChar->setValue(&ack, 1);
+            if (chunkIdx == nextExpectedChunk) {
+                if (len > 0) {
+                    wallFile.write(&data[6], len);
+                    currentTotalSize += len;
+                    nextExpectedChunk++;
+                    
+                    // Reply UNIQUE ACK 0x06 + Index [low, high]
+                    uint8_t reply[3];
+                    reply[0] = 0x06;
+                    reply[1] = chunkIdx & 0xFF;
+                    reply[2] = (chunkIdx >> 8) & 0xFF;
+                    
+                    pWallChar->setValue(reply, 3);
+                    pWallChar->notify();
+                    
+                    if (chunkIdx % 25 == 0 && Serial) Serial.printf("BLE: Chunk %d OK // [ACK SENT]\n", chunkIdx);
+                }
+            } else {
+                // Reply NAK 0x15 (Out of order)
+                uint8_t nak = 0x15;
+                pWallChar->setValue(&nak, 1);
                 pWallChar->notify();
-                
-                if (chunkIdx % 20 == 0 && Serial) Serial.printf("BLE: Received Chunk %d // [WRITING]\n", chunkIdx);
+                if (Serial) Serial.printf("BLE: Index Mismatch! Got %d, Expected %d // [NAK]\n", chunkIdx, nextExpectedChunk);
             }
         }
     }
@@ -110,6 +124,7 @@ class ControlCallbacks : public BLECharacteristicCallbacks {
             if (cmd == 0x01 && value.length() == 5) { // Initiation
                 expectedSize = value[1] | (value[2] << 8) | (value[3] << 16) | (value[4] << 24);
                 currentTotalSize = 0;
+                nextExpectedChunk = 0; // [GUARD] Start from Zero
                 wallFile = LittleFS.open("/wallpaper.bin", "w");
                 ble_is_syncing = true;
                 power_manager_set_freq(FREQ_HIGH); // Turbo Mode
@@ -133,7 +148,9 @@ class ControlCallbacks : public BLECharacteristicCallbacks {
             else if (cmd == 0x03) { ui_manager_request_state(STATE_EXEC_HR); }
             else if (cmd == 0x04) { ui_manager_report_sensors(0x04); }
             else if (cmd == 0x05) { ui_manager_report_sensors(0x05); }
-            else if (cmd == 0x00) { ui_manager_request_state(STATE_WATCHFACE); } // New: Go Home
+            else if (cmd == 0x00) { ui_manager_request_state(STATE_WATCHFACE); } 
+            else if (cmd == 0x08) { ui_manager_request_state(STATE_WATCHFACE); } // Stop HR (Return Home)
+            else if (cmd == 0x09) { /* Stop Step Streaming Placeholder */ }
             else if (cmd == 0x07) { ESP.restart(); }
         }
     }

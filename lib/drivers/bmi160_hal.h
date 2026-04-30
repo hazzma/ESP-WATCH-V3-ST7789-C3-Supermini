@@ -29,3 +29,4 @@ void bmi160_hal_update();
  * @return Total steps.
  */
 uint32_t bmi160_hal_get_steps();
+bool bmi160_hal_was_motion_wake();

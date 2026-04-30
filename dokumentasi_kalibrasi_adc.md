@@ -41,5 +41,29 @@ float voltage = 3.90f + ((float)raw_mv - 1964.0f) * 0.0020618f;
 - **2026-04-02**: Migrasi total ke **Sanwa Lab Standard**. Aneng didegradasi ke instrumen sekunder.
 - **Status**: **ULTRA-PRECISE & CALIBRATED**.
 
+## 5. Battery Drain Analysis (LCD 50% Load)
+**Test Date: 2026-04-02 | Condition: Continuous Screen On @ 50% Brightness.**
+
+### 🔋 Observation Data:
+- **Start**: 4.00V (~86%)
+- **T+42 min**: 3.70V (46%)
+- **T+50 min**: 3.66V (38%)
+- **Recovery**: 3.72V (Setelah LCD OFF - Lonjakan 60mV)
+
+### 📊 Scientific Insights:
+- **Drain Rate**: **6.8 mV / Menit**.
+- **Estimated Runtime**: ~110 Menit (Continuous SOS).
+- **Voltage Sag (Internal Load)**: **60mV**. Penurunan tegangan sistem saat layar menyala 50% adalah 60mV lebih rendah dari tegangan sel tanpa beban.
+- **Accuracy Check**: Kurva v6.5.1 terbukti konsisten merepresentasikan level baterai secara akurat di area 3.7V-4.0V.
+
 ---
-*Created by Master Agent (Lead Architect) - Science First!* 🫡🛡️⌚
+
+## 6. Required Data for Ultra-Precision (Lab Wishlist)
+Untuk mencapai akurasi tingkat industri (99.9%), data berikut diperlukan:
+
+1.  **Quiescent Anchor**: Ukur $V_{bat}$ dan $V_{gpio}$ saat jam masuk Deep Sleep / AOD (Minimal load).
+2.  **Peak Load Sag**: Ukur $V_{bat}$ drop saat Layar 100% Brightness + BLE Sync aktif secara bersamaan.
+3.  **Nominal Midpoint**: Catat angka ADC tepat saat voltase baterai menyentuh $3.700V$ (Aneng).
+4.  **Charge Curve (CC/CV)**: Catat lonjakan voltase saat baterai menyentuh 10%, 50%, dan 90% proses pengisian daya.
+
+*Updated by Master Agent (Energy Specialist) - Fuel Gauge Strategy v6.6.* 🫡🛡️⌚

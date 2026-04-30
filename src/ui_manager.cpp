@@ -62,7 +62,7 @@ static RTC_DATA_ATTR int clock_h = 10, clock_m = 10, clock_s = 0;
 static RTC_DATA_ATTR bool clock_initialized = false;
 static int last_min_val = -1;
 static uint8_t last_batt_val = 255;
-static RTC_DATA_ATTR bool mid_reset_done = false; 
+static RTC_DATA_ATTR int last_reset_yday = -1; 
 
 // Sprites
 static TFT_eSprite canvas_spr = TFT_eSprite(&display_hal_get_tft()); // [UI AGENT] Unified Shared Canvas (USA)
@@ -81,6 +81,7 @@ static void build_menu_sprite(TFT_eSprite& spr, AppState st, int bx, int by);
 static void push_wallpaper_rect(int x, int y, int w, int h);
 static void draw_brightness_icon(TFT_eSprite& spr, int x, int y, uint16_t color);
 static void draw_heart_icon(TFT_eSPI &tft, int cx, int cy, uint16_t color, float scale);
+static void push_sub_sprite(int tx, int ty, int w, int h);
 
 // ─── CONSTANTS ──────────────────────────────────────────────────────────
 static const int MENU_BX = 20, MENU_BY = 90, MENU_BW = 200, MENU_BH = 100;
@@ -108,8 +109,8 @@ void ui_manager_init() {
     if (top_clock_spr.created()) top_clock_spr.deleteSprite();
     if (heart_spr.created())  heart_spr.deleteSprite();
 
-    // [UI AGENT] INSANE COMPOSITOR (Standard Height 100px for menu)
-    canvas_spr.createSprite(240, 100); canvas_spr.setSwapBytes(true); 
+    // [UI AGENT] INSANE COMPOSITOR (Fixed Maximum Size 240x160 to prevent Heap Fragmentation)
+    canvas_spr.createSprite(240, 160); canvas_spr.setSwapBytes(true); 
     status_spr.createSprite(65, 25);  status_spr.setSwapBytes(true);
     fps_spr.createSprite(35, 15);     fps_spr.setSwapBytes(true);
     top_clock_spr.createSprite(60, 15); top_clock_spr.setSwapBytes(true);
@@ -167,6 +168,10 @@ static void push_top_clock(bool force) {
     char buf[8]; sprintf(buf, "%02d:%02d", clock_h, clock_m);
     top_clock_spr.drawString(buf, 30, 8); top_clock_spr.pushSprite(tx, ty);
     last_min_val = clock_m;
+}
+
+static void push_sub_sprite(int tx, int ty, int w, int h) {
+    canvas_spr.pushSprite(tx, ty, 0, 0, w, h);
 }
 
 static void draw_brightness_icon(TFT_eSprite& spr, int x, int y, uint16_t color) {
@@ -235,12 +240,8 @@ static void animate_slide_transition(AppState from, AppState to, int dir) {
     ui_is_high_load = true; 
     TFT_eSPI& tft = display_hal_get_tft();
     
-    // [UI AGENT] SAFE BOOT: Stay at 160MHz for first ~5 seconds to stabilize USB CDC
-    if (boot_stabilize_counter < 300) {
-        power_manager_set_freq(FREQ_HIGH); ui_cpu_freq = FREQ_HIGH;
-    } else {
-        power_manager_set_freq(FREQ_MID); ui_cpu_freq = FREQ_MID;
-    }
+    // [UI AGENT] Ensure 160MHz during animation for butter-smooth transition
+    power_manager_set_freq(FREQ_HIGH); ui_cpu_freq = FREQ_HIGH;
     
     if (from == STATE_EXEC_STEPS) {
         const uint16_t* wall = assets_get_wallpaper();
@@ -253,9 +254,6 @@ static void animate_slide_transition(AppState from, AppState to, int dir) {
     
     int target_h = (current_state == STATE_EXEC_STEPS) ? 160 : 
                    ((current_state == STATE_SYNCING) ? 120 : MENU_BH);
-    if (canvas_spr.width() != 240 || canvas_spr.height() != target_h) {
-        canvas_spr.deleteSprite(); canvas_spr.createSprite(240, target_h); canvas_spr.setSwapBytes(true);
-    }
 
     for (int i = 0; i <= steps; i++) {
         int offset = (i * 240) / steps; 
@@ -268,7 +266,8 @@ static void animate_slide_transition(AppState from, AppState to, int dir) {
             draw_menu_card(canvas_spr, from, MENU_BX + offset, 0);
             draw_menu_card(canvas_spr, to, MENU_BX - 240 + offset, 0);
         }
-        canvas_spr.pushSprite(0, 90);
+        push_sub_sprite(0, 90, 240, target_h);
+        yield(); // [BUG FIX] Relieve Watchdog and ensure smooth rendering
     }
     ui_is_high_load = false;
 }
@@ -280,11 +279,6 @@ void ui_manager_update() {
     // Auto-AOD on Charging
     if (charging) aod_allowed = true;
 
-    // [POWER AGENT] Auto-Reset steps at Midnight (00:00)
-    if (clock_h == 0 && clock_m == 0) {
-        if (!mid_reset_done) { bmi160_hal_reset_steps(); mid_reset_done = true; }
-    } else { mid_reset_done = false; }
-
     // [POWER AGENT] Sync Local Vars with Hardware RTC
     struct timeval tv_now;
     gettimeofday(&tv_now, NULL);
@@ -293,6 +287,19 @@ void ui_manager_update() {
     clock_h = ti->tm_hour;
     clock_m = ti->tm_min;
     clock_s = ti->tm_sec;
+    
+    // [POWER AGENT] Auto-Reset steps on Day Change (Midnight Fix)
+    if (last_reset_yday != ti->tm_yday) {
+        // Reset steps only if time is synced (tm_year > 120 means > 2020)
+        if (ti->tm_year > 120) {
+            bmi160_hal_reset_steps();
+            last_reset_yday = ti->tm_yday;
+            if (Serial) Serial.printf("[POWER] New Day Detected (%d), Steps Reset // [DEBUG]\n", ti->tm_yday);
+        } else {
+            // If not synced, just update the yday to prevent massive reset on first sync
+            last_reset_yday = ti->tm_yday;
+        }
+    }
     
     bool nd = (current_state != last_rendered_state);
     
@@ -336,6 +343,12 @@ void ui_manager_update() {
         max30100_hal_update(); // [ON-DEMAND]
         if (max30100_hal_check_beat()) nd = true; 
     }
+    static unsigned long last_bg_poll = 0;
+    if (now - last_bg_poll > 60000) { // [BG SYNC] Poll sensor every 60s for 32-bit accumulation
+        bmi160_hal_update(); 
+        last_bg_poll = now;
+    }
+
     if (current_state == STATE_EXEC_STEPS) {
         bmi160_hal_update(); // [ON-DEMAND]
     }
@@ -389,8 +402,7 @@ void ui_manager_update() {
         else if (current_state == STATE_SET_TIMER_M) { target = STATE_SET_TIMER_S; }
         else if (current_state == STATE_SET_TIMER_S) { target = STATE_SET_TIMER_H; }
     } else if (bt == BTN_RIGHT_HOLD) {
-        if      (current_state == STATE_WATCHFACE)  { bmi160_hal_reset_steps(); nd = true; } 
-        else if (current_state == STATE_EXEC_STEPS) { bmi160_hal_reset_steps(); nd = true; } // Reset in dash
+        if      (current_state == STATE_EXEC_STEPS) { bmi160_hal_reset_steps(); nd = true; } // Reset ONLY in dash
         else if (current_state == STATE_MENU_HR)    { if (max30100_hal_init()) { target = STATE_EXEC_HR; hr_start_time = millis(); nd = true; } }
         else if (current_state == STATE_EXEC_HR)    { max30100_hal_shutdown(); target = STATE_MENU_HR; }
         else if (current_state == STATE_MENU_TIMEOUT) target = STATE_SET_TIMEOUT;
@@ -494,10 +506,7 @@ static void render_current_state() {
             // 3. WAVEFORM GRAPH (10Hz UPDATE)
             static uint32_t last_g_upd = 0;
             if (now - last_g_upd > 100 || last_rendered_state != STATE_EXEC_HR) {
-                if (canvas_spr.width() != 208 || canvas_spr.height() != 80) {
-                    canvas_spr.deleteSprite(); canvas_spr.createSprite(208, 80); canvas_spr.setSwapBytes(true);
-                }
-                canvas_spr.fillSprite(C_BG);
+                canvas_spr.fillRect(0, 0, 208, 80, C_BG);
                 float hist[60]; max30100_hal_get_history(hist);
                 for(int i=0; i < 59; i++) {
                     if (hist[i] > 30 && hist[i+1] > 30) {
@@ -508,7 +517,7 @@ static void render_current_state() {
                         canvas_spr.drawLine(i*3.5, y1, (i+1)*3.5, y2, C_HR_RED); // Line
                     }
                 }
-                canvas_spr.pushSprite(16, 124); 
+                push_sub_sprite(16, 124, 208, 80); 
                 tft.drawFastHLine(16, 214, 208, C_DIVIDER);
                 last_g_upd = now;
             }
@@ -519,10 +528,7 @@ static void render_current_state() {
             static uint32_t last_timer_v = 999;
             
             if (spo2 != last_spo2_v || elap_s != last_timer_v || last_rendered_state != STATE_EXEC_HR) {
-                if (canvas_spr.width() != 240 || canvas_spr.height() != 65) {
-                    canvas_spr.deleteSprite(); canvas_spr.createSprite(240, 65); canvas_spr.setSwapBytes(true);
-                }
-                canvas_spr.fillSprite(C_BG);
+                canvas_spr.fillRect(0, 0, 240, 65, C_BG);
                 canvas_spr.setTextDatum(TL_DATUM); canvas_spr.setTextColor(C_MUTED); canvas_spr.setTextSize(1); 
                 canvas_spr.drawString("SPO2", 16, 6);
                 canvas_spr.setTextColor(C_SPO2); canvas_spr.setTextSize(3); 
@@ -534,7 +540,7 @@ static void render_current_state() {
                 char tb[16]; sprintf(tb, "%d:%02d", elap_s/60, elap_s%60); 
                 canvas_spr.drawString(tb, 224, 20);
                 
-                canvas_spr.pushSprite(0, 215); 
+                push_sub_sprite(0, 215, 240, 65); 
                 last_spo2_v = spo2; last_timer_v = elap_s;
             }
             return;
@@ -574,24 +580,18 @@ static void render_current_state() {
               char buf[16]; sprintf(buf, "%02d:%02d.%02d", m, s, ms); tft.drawString(buf, 120, 140);
             } return;
         case STATE_SET_TIMEOUT:
-            if (canvas_spr.width() != MENU_BW || canvas_spr.height() != MENU_BH) {
-                canvas_spr.deleteSprite(); canvas_spr.createSprite(MENU_BW, MENU_BH); canvas_spr.setSwapBytes(true);
-            }
             if (last_rendered_state != STATE_SET_TIMEOUT) {
                 canvas_spr.pushImage(-MENU_BX, -MENU_BY, 240, 280, assets_get_wallpaper());
                 draw_menu_card(canvas_spr, STATE_MENU_TIMEOUT, 0, 0);
             } else { canvas_spr.fillRect(40, 45, 120, 30, BOX_COL); } 
             canvas_spr.setTextColor(TFT_GOLD); canvas_spr.setTextSize(2); canvas_spr.drawString("-", 30, 60); canvas_spr.drawString("+", 170, 60);
             { char buf[16]; sprintf(buf, "%d s", power_manager_get_auto_sleep_timeout()); canvas_spr.setTextColor(TFT_WHITE); canvas_spr.drawString(buf, MENU_BW/2, 60); }
-            canvas_spr.pushSprite(MENU_BX, MENU_BY); break;
+            push_sub_sprite(MENU_BX, MENU_BY, MENU_BW, MENU_BH); break;
         case STATE_SET_BRIGHTNESS:
-            if (canvas_spr.width() != MENU_BW || canvas_spr.height() != MENU_BH) {
-                canvas_spr.deleteSprite(); canvas_spr.createSprite(MENU_BW, MENU_BH); canvas_spr.setSwapBytes(true);
-            }
             canvas_spr.pushImage(-MENU_BX, -MENU_BY, 240, 280, assets_get_wallpaper());
             draw_menu_card(canvas_spr, STATE_MENU_BRIGHTNESS, 0, 0);
             { int bar_w = (brightness_ui_val * 160) / 255; canvas_spr.drawRoundRect(20, 75, 160, 12, 6, TFT_WHITE); canvas_spr.fillRect(22, 77, 156, 8, BOX_COL); canvas_spr.fillRoundRect(22, 77, bar_w > 4 ? bar_w - 4 : 0, 8, 4, TFT_GREEN); }
-            canvas_spr.pushSprite(MENU_BX, MENU_BY); break;
+            push_sub_sprite(MENU_BX, MENU_BY, MENU_BW, MENU_BH); break;
         case STATE_EXEC_STEPS:
             {
                 // [POWER AGENT] Smart Shift Guard
@@ -605,7 +605,7 @@ static void render_current_state() {
                     tft.pushImage(0, 0, 240, 60, assets_get_wallpaper()); 
                     push_top_clock(true);
                     tft.setTextDatum(MC_DATUM); tft.setTextColor(TFT_WHITE); tft.setTextSize(2); 
-                    // [SYNC] Removed misplaced connected labels from Activity dash.
+                    tft.drawString("ACTIVITY", 120, 30);
                     
                     // [STEP 5] Progress Bar if syncing
                     if (ble_is_syncing) {
@@ -617,14 +617,10 @@ static void render_current_state() {
                     step_warmup_timer = millis(); 
                 }
                 
-                // 2. 1-SECOND WARMUP POLLING
-                uint32_t steps = 0;
-                if (!ui_is_high_load && (millis() - step_warmup_timer > 1000)) {
-                    static uint32_t last_poll_t = 0;
-                    if (millis() - last_poll_t > 500) { bmi160_hal_update(); last_poll_t = millis(); }
-                    steps = bmi160_hal_get_steps();
-                    if (steps > 1000000) steps = 0; 
-                }
+                // 2. CONTINUOUS POLLING (v7.2)
+                static uint32_t last_poll_t = 0;
+                if (millis() - last_poll_t > 500) { bmi160_hal_update(); last_poll_t = millis(); }
+                uint32_t steps = bmi160_hal_get_steps();
 
                 uint32_t goal = 10000;
                 float ratio = constrain(steps / (float)goal, 0.0f, 1.0f);
@@ -650,10 +646,9 @@ static void render_current_state() {
                     canvas_spr.drawString(s_buf, rx, ry - 5);
                     canvas_spr.setTextSize(1); canvas_spr.setTextColor(C_MUTED); 
                     canvas_spr.drawString("STEPS TODAY", rx, ry + 25);
-                    canvas_spr.pushSprite(0, 60);
+                    push_sub_sprite(0, 60, 240, 145);
 
                     // B. Draw Bottom Stats using small efficient Sprite (Y offset 205, Height 35)
-                    if (canvas_spr.height() != 35) { canvas_spr.deleteSprite(); canvas_spr.createSprite(240, 35); canvas_spr.setSwapBytes(true); }
                     canvas_spr.pushImage(0, -205, 240, 280, assets_get_wallpaper()); // Surgical Crop at Y=205
                     canvas_spr.setTextDatum(TL_DATUM); canvas_spr.setTextSize(1); canvas_spr.setTextColor(TFT_WHITE);
                     char k_buf[32]; sprintf(k_buf, "%d KCAL", (int)(steps * 0.044f)); 
@@ -661,19 +656,16 @@ static void render_current_state() {
                     canvas_spr.setTextDatum(TR_DATUM); 
                     char m_buf[32]; sprintf(m_buf, "%.1f KM", steps * 0.00075f); 
                     canvas_spr.drawString(m_buf, 210, 215 - 205); // Y=215
-                    canvas_spr.pushSprite(0, 205); 
+                    push_sub_sprite(0, 205, 240, 35); 
 
                     last_disp_steps = steps;
                 }
             }
             break;
         default:
-            if (canvas_spr.width() != MENU_BW || canvas_spr.height() != MENU_BH) {
-                canvas_spr.deleteSprite(); canvas_spr.createSprite(MENU_BW, MENU_BH); canvas_spr.setSwapBytes(true);
-            }
             canvas_spr.pushImage(-MENU_BX, -MENU_BY, 240, 280, assets_get_wallpaper());
             draw_menu_card(canvas_spr, current_state, 0, 0); 
-            canvas_spr.pushSprite(MENU_BX, MENU_BY); break;
+            push_sub_sprite(MENU_BX, MENU_BY, MENU_BW, MENU_BH); break;
     }
 }
 
@@ -695,14 +687,11 @@ static void draw_watchface(TFT_eSPI& tft, bool full_redraw) {
     const uint16_t* wall = assets_get_wallpaper();
     if (full_redraw) { if (is_dimmed_aod) tft.fillScreen(TFT_BLACK); else tft.pushImage(0, 0, 240, 280, wall); }
     int cx = 30, cy = 60; 
-    if (canvas_spr.width() != 180 || canvas_spr.height() != 150) {
-        canvas_spr.deleteSprite(); canvas_spr.createSprite(180, 150); canvas_spr.setSwapBytes(true);
-    }
-    if (is_dimmed_aod) canvas_spr.fillSprite(TFT_BLACK); else canvas_spr.pushImage(-cx, -cy, 240, 280, wall);
+    if (is_dimmed_aod) canvas_spr.fillRect(0, 0, 180, 150, TFT_BLACK); else canvas_spr.pushImage(-cx, -cy, 240, 280, wall);
     char buf[8]; sprintf(buf, "%02d", clock_h); canvas_spr.setTextDatum(MC_DATUM); canvas_spr.setTextColor(COLOR_WATCH_HH); canvas_spr.setTextSize(8); canvas_spr.drawString(buf, 90, 35);
     sprintf(buf, "%02d", clock_m); canvas_spr.setTextColor(COLOR_WATCH_MM); canvas_spr.drawString(buf, 90, 105);
     if (!is_dimmed_aod) { canvas_spr.setTextColor(COLOR_WATCH_DATE); canvas_spr.setTextSize(2); canvas_spr.drawString("TUE 17 MAR", 90, 145); }
-    canvas_spr.pushSprite(cx, cy); uint8_t batt = get_battery_percentage(); int sx = 165, sy = 15;
+    push_sub_sprite(cx, cy, 180, 150); uint8_t batt = get_battery_percentage(); int sx = 165, sy = 15;
     bool charging = power_manager_is_charging();
     if (is_dimmed_aod) status_spr.fillSprite(TFT_BLACK); else status_spr.pushImage(-sx, -sy, 240, 280, wall);
     status_spr.pushImage(45, 5, 16, 16, assets_get_icon_battery()); 
@@ -719,7 +708,8 @@ static void draw_watchface(TFT_eSPI& tft, bool full_redraw) {
 }
 
 static uint8_t get_battery_percentage() { 
-    float v = power_manager_read_battery_voltage(); 
+    // [v6.6] Apply 60mV compensation if not in AOD mode (since LCD is drawing current)
+    float v = power_manager_read_battery_voltage(!is_dimmed_aod); 
     bool charging = power_manager_is_charging();
     
     // [ANTI-SPIKE] Sanwa-observed jump: 0.27V. Using -0.25V compensation.

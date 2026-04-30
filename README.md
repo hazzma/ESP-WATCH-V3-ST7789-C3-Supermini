@@ -65,4 +65,3 @@ Untuk detail teknis per-agen, silakan baca:
 *   [src/FSD.md](src/FSD.md) - Spesifikasi Fungsi & Checkpoint Status.
 
 ---
-*Dibuat dengan dedikasi tinggi oleh Antigravity AI Agent.*

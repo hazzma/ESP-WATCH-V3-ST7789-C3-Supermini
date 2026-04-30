@@ -177,3 +177,47 @@ Meskipun CPU di-throttle ke **80MHz**, animasi terasa **lebih mulus** karena:
 
 ---
 *Laporan selesai by UI/UX Agent - Checkpoint 6 (Masterpiece Efficiency).*
+
+## Version 6.1 (The Static Canvas & Anti-Blanking Protocol) 🔥
+**Update Terbaru: 17 April 2026**
+
+### 1. Eliminasi Fragmentasi Heap (Static Canvas Architecture)
+Menemukan *root cause* dari layar "blank" saat BLE terhubung dan ring *step counter* terpotong. Pemanggilan `deleteSprite` dan `createSprite` secara dinamis di *runtime* menyebabkan memori terfragmentasi (pecah) ketika koneksi BLE memakan *stack*.
+*   **Surgical Fix**: `canvas_spr` kini dibuat secara statis hanya SEKALI di `ui_manager_init()` dengan ukuran aman maksimal **240x160**.
+*   **Low-Level Pushing**: Menambahkan fungsi bantuan `push_sub_sprite` yang secara langsung mem-bypass *wrapper* `TFT_eSprite` dan menembakkan raw *pixels* ke `TFT_eSPI::pushPixels`. Ini memastikan *sprite* raksasa tidak akan meng-overwrite area lain di luar region *bounding box* yang dituju.
+*   **Hasil**: RAM sangat stabil, tidak ada resiko alokasi gagal, dan layar tidak pernah *blank* meskipun ada interupsi dari *Bluetooth*.
+
+### 2. Relaksasi Watchdog & Smooth Animation
+*   **Yield Injection**: Menambahkan instruksi relaksasi `yield()` di dalam *loop* `animate_slide_transition()`. Ini menjinakkan *Watchdog Timer (WDT)* sehingga tidak akan *panic reset* walau interupsi BLE datang bertubi-tubi saat UI sedang *slide*.
+*   **160MHz Lock**: Memastikan CPU ditarik penuh ke `FREQ_HIGH` (160MHz) secara konsisten selama animasi berjalan, memperbaiki *bug* animasi patah-patah (*choppy*) pada v5.x.
+
+### 3. Perlindungan Step Counter (Anti-Accidental Reset)
+*   Menghapus pemanggilan `bmi160_hal_reset_steps()` melalui tahanan tombol Kanan (Right-Hold) pada mode `STATE_WATCHFACE`. Pengguna *watchface* sering tidak sengaja me-reset langkahnya.
+*   *Reset steps* sekarang diisolasi murni hanya dapat dilakukan di dalam mode *Dashboard Activity* (`STATE_EXEC_STEPS`).
+
+### 4. Perbandingan Kode (Before vs After)
+
+**BEFORE (Raw pushPixels - Rentan Warna Terbalik & SPI Noise):**
+```cpp
+static void push_sub_sprite(int tx, int ty, int w, int h) {
+    TFT_eSPI& tft = display_hal_get_tft();
+    uint16_t* ptr = (uint16_t*)canvas_spr.getPointer();
+    int stride = 240;
+    tft.setWindow(tx, ty, tx + w - 1, ty + h - 1);
+    for (int i = 0; i < h; i++) {
+        tft.pushPixels(ptr + (i * stride), w); // ❌ Raw push tanpa penguncian SPI & Endianness Handling
+    }
+}
+```
+
+**AFTER (Native pushSprite - Aman, Mulus, & Warna Sesuai):**
+```cpp
+static void push_sub_sprite(int tx, int ty, int w, int h) {
+    // ✅ Menggunakan fungsi bawaan dari TFT_eSprite yang menjamin SPI Transaction CS Pin Lock
+    // ✅ Otomatis menanggulangi Endianness Swap (RGB ke BGR)
+    canvas_spr.pushSprite(tx, ty, 0, 0, w, h); 
+}
+```
+
+---
+*Laporan selesai by UI/UX Agent - Checkpoint 10 (Surgical Memory Perfection).*

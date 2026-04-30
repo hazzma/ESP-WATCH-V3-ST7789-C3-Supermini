@@ -15,8 +15,15 @@ void setup() {
     pinMode(10, OUTPUT);
     digitalWrite(10, LOW);
     
+    // [STABILIZATION] Paling Penting: Beri waktu 2 detik murni untuk Windows
+    // me-mount driver USB CDC *SEBELUM* ada data dikirim ke Serial
+    delay(2000); 
+    
     Serial.begin(115200);
-    delay(800); 
+    Serial.setTxTimeoutMs(0); // [FIX] Prevent CDC hang when buffer is full
+    
+    // [POWER AGENT] Priority Frequency Shift (160MHz) for CDC Stability
+    power_manager_init(); 
 
     // Hardware initialization
     Wire.begin(PIN_SDA, PIN_SCL);
@@ -26,7 +33,8 @@ void setup() {
          if (Serial) Serial.println("Main: BMI160 Ready // [DEBUG]");
     }
     
-    power_manager_init();
+    
+    // power_manager_init(); // Moved to earlier boot phase
     display_hal_init();
     button_hal_init();
     LittleFS.begin(true); // [MOUNT] Expansion Storage

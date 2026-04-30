@@ -1,6 +1,10 @@
 # MASTER KNOWLEDGE BASE — ESP32-C3 SMARTWATCH (V6.0)
 *Reference document for development phase 4 (BLE, App Interface)*
 
+> **SUPERVISION & SURGICAL EXECUTION RULE (MANDATORY)**
+> 1. Master Agent **WAJIB** mendelegasikan tugas teknis kepada Sub-Agent (Power, UI/UX, Sensor, Display).
+> 2. Semua eksekusi kode harus dilakukan secara **SURGICAL (Bedah Presisi)**. Tidak boleh ada bagian kode yang tidak relevan ikut terubah tanpa konfirmasi persetujuan dari USER.
+
 ## 1. Hardware Architecture (LOCKED)
 - **MCU**: ESP32-C3 SuperMini (Core 0 only).
 - **Display**: ST7789 TFT (240x280) — SPI (MOSI:6, SCK:4, DC:2, RST:1, BL:10 PWM).
@@ -60,3 +64,14 @@ Ditemukan bug koordinat yang menyebabkan Dashboard Steps terpotong di layar 240x
 
 ---
 *Laporan selesai by UI/UX Agent - Checkpoint 9 (Connectivity Ready).*
+
+## 8. DEBT & BUGS TARGET (NEXT SPRINT) 🎯
+Berikut adalah daftar kelemahan arsitektur (*Technical Debt*) & bug potensial yang saat ini masuk antrean prioritas untuk diselesaikan (*Surgical Target*):
+1. **Critical CDC Hang pada Boot (COM Stuck)**: Sistem sering *freeze* dengan layar *blank hitam* (backlight nyala tapi idle) karena *deadlock* pada USB CDC, masalah *TxTimeout*, atau inisialisasi *hardware* (I2C/LittleFS) yang gagal saat komputer telat me-mount COM port.
+2. **Race Conditions pada Variabel BLE**: Status `ble_is_connected` dan `ble_is_syncing` memicu *race condition* atau telat sinkron pada UI karena nilai tidak di-tag sebagai `volatile` (mengingat event dieksekusi di *background task* BLE).
+3. **Bahaya Fragmentasi Heap dari Sprite**: Pemanggilan berulang `deleteSprite()` dan `createSprite()` di `ui_manager` bisa menyebabkan ruang *Free Space* RAM pecah-pecah (fragmented) sehingga sistem berpotensi *Out of Memory* dan *Crash*.
+4. **Hardcoded Battery Offset Curve**: Logika kompensasi *charging* dengan angka mati `(v - 0.25f)` rentan kacau jika beda daya input atau kabel, membuat indikator persentase meloncat tidak beraturan.
+5. **No-Yield Blocking Loop**: Animasi geser (`animate_slide_transition()`) berjalan membabi-buta tanpa porsi relaksasi `yield()`. Jika data BLE masuk saat geser menu, *Watchdog Timer* (WDT) bisa teriak karena proses lain nggak dikasih waktu napas.
+6. **Step Counter Auto-Reset Bug**: Pada mode step counter, jumlah langkah kadang ter-reset sendiri ke 0 secara tiba-tiba tanpa pemicu yang jelas.
+7. **Blank Screen on BLE Connect**: Terkadang saat jam baru saja terhubung ke koneksi BLE, UI jam hilang/nge-blank dan hanya menyisakan background (wallpaper) saja.
+8. **Missing UI on Wake-up (Step Counter Mode)**: Jika layar dimatikan saat sedang berada di mode step counter, lalu dihidupkan kembali, sistem berhasil kembali ke state tersebut namun angka stat (step) tidak muncul (hanya terlihat ring/lingkaran dan wallpaper).

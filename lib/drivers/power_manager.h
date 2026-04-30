@@ -20,10 +20,11 @@ void power_manager_set_freq(int mhz);
 void power_manager_enter_deep_sleep();
 
 /**
- * @brief Read current battery voltage.
- * @return Voltage in volts (e.g., 4.2f)
+ * @brief Read current battery voltage with optional load compensation.
+ * @param apply_compensation If true, adds back the measured 60mV LCD sag (v6.6).
+ * @return Filtered voltage (EMA) in volts.
  */
-float power_manager_read_battery_voltage();
+float power_manager_read_battery_voltage(bool apply_compensation = false);
 
 /**
  * @brief Check if USB is charging.

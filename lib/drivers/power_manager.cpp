@@ -24,6 +24,21 @@ void power_manager_init() {
         power_manager_set_freq(FREQ_HIGH); // Initial peak for CDC
     } else {
         power_manager_set_freq(FREQ_MID);  // Direct to cruise speed
+        if (cause == ESP_SLEEP_WAKEUP_GPIO) {
+            uint64_t wake_pin = esp_sleep_get_gpio_wakeup_status();
+            if (Serial) {
+                if (wake_pin & (1ULL << PIN_BTN_RIGHT)) {
+                    // Cek internal register BMI160 untuk memastikan apakah ini Motion
+                    if (bmi160_hal_was_motion_wake()) {
+                        Serial.println("[POWER] Wake Source: MOTION (BMI160 via shared GPIO 5) // [DEBUG]");
+                    } else {
+                        Serial.println("[POWER] Wake Source: USER BUTTON (GPIO 5) // [DEBUG]");
+                    }
+                } else {
+                    Serial.printf("[POWER] Wake Source: EXTERNAL GPIO (0x%llX) // [DEBUG]\n", wake_pin);
+                }
+            }
+        }
     }
 }
 
@@ -72,7 +87,8 @@ void power_manager_enter_deep_sleep() {
     esp_deep_sleep_start();
 }
 
-float power_manager_read_battery_voltage() {
+float power_manager_read_battery_voltage(bool apply_compensation) {
+    static float filtered_voltage = -1.0f;
     static uint32_t last_v_print = 0;
     
     // analogReadMilliVolts() use internal factory calibration (Vref)
@@ -81,12 +97,19 @@ float power_manager_read_battery_voltage() {
     // [CALIB 2-POINT] Interpolation (Sanwa Lab Verified Final - v6.5.1)
     // Point 1: 1964mV -> 3.90V | Point 2: 2061mV -> 4.10V
     float voltage = 3.90f + ((float)raw_mv - 1964.0f) * 0.0020618f;
-    
+
+    // [v6.6] Software Load Compensation: Add back the measured 60mV LCD sag
+    if (apply_compensation) voltage += 0.060f;
+
+    // [v6.6] EMA Filter: Exponential Moving Average (Coefficient 0.08)
+    if (filtered_voltage < 0) filtered_voltage = voltage; // Initial seed
+    filtered_voltage = (filtered_voltage * 0.92f) + (voltage * 0.08f);
+
     uint32_t now = millis();
     if (now - last_v_print > 2000) {
         if (Serial) {
-            // [DIAGNOSTIC] Sanwa v6.5.1 Consistent Curve
-            float v_log = voltage;
+            // [DIAGNOSTIC] Sanwa v6.6 Consistent Curve
+            float v_log = filtered_voltage;
             int pct = 0;
             if (v_log >= 4.10f) pct = 100;
             else if (v_log <= 3.35f) pct = 0;
@@ -94,15 +117,15 @@ float power_manager_read_battery_voltage() {
             else if (v_log > 3.65f) pct = (int)(40 + (v_log - 3.65f) / (3.90f - 3.65f) * 40);
             else pct = (int)((v_log - 3.35f) / (3.65f - 3.35f) * 40);
 
-            Serial.printf("[POWER] ADC: %dmV | VBAT: %.3fV | BATT: %d%% // [DIAGNOSTIC]\n", raw_mv, voltage, pct);
+            Serial.printf("[POWER] ADC: %dmV | VBAT: %.3fV | BATT: %d%% // [DIAGNOSTIC]\n", raw_mv, filtered_voltage, pct);
         }
         last_v_print = now;
     }
-    return voltage;
+    return filtered_voltage;
 }
 
 bool power_manager_is_charging() {
-    float v = power_manager_read_battery_voltage();
+    float v = power_manager_read_battery_voltage(false);
     // 1. Check hardware pin (Active LOW)
     pinMode(PIN_CHRG, INPUT_PULLUP);
     bool pin_chrg = (digitalRead(PIN_CHRG) == LOW);

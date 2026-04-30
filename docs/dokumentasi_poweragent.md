@@ -35,6 +35,12 @@ Sesuai permintaan USER, sistem sekarang memaksa kecepatan CPU di **160MHz (FREQ_
 *   **Wakeup (Deep Sleep)**: Sekarang juga dipaksa ke 160MHz selama periode yang sama sebelum turun ke mode hemat daya (80MHz). 
 *   **Tujuan**: Mengurangi resiko "Stuck CDC Mode" atau port sibuk saat pengembangan dan penggunaan sehari-hari.
 
+## 7. Hardened Startup Logic (CDC Recovery)
+Untuk mengatasi masalah "Kadang Stuck / Kadang Normal" pada ESP32-C3 Supermini:
+*   **Early Frequency Lock**: `power_manager_init()` dipindah ke baris paling awal setelah `Serial.begin()`.
+*   **Wait-for-Stabilize**: Menambahkan `delay(2000)` sebelum inisialisasi hardware berat (I2C, Display).
+*   **Hasil**: Komputer memiliki waktu lebih lama untuk mengenali driver USB CDC sebelum chip mulai menarik arus besar untuk menyalakan sensor/layar.
+
 ---
 *Laporan selesai by Power & Sleep Agent - Efficiency Tier: S-Rank.*
-*Update CDC Stability v1.0 applied.*
+*Update CDC Stability v1.1 applied (Hardened Startup).*

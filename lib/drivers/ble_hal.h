@@ -8,11 +8,13 @@ extern bool ble_is_connected;
 
 void ble_hal_init();
 void ble_hal_update();
+void ble_hal_update_enabled();
 
 // [GUARD] Notify-back functions
 void ble_hal_notify_hr(uint8_t bpm, uint8_t spo2);
 void ble_hal_notify_steps(uint32_t steps);
 void ble_hal_notify_battery(uint8_t percent, bool charging);
+void ble_hal_notify_calibration(uint8_t* data, size_t len);
 
 // [STEP 5] Progress Tracking
 float ble_hal_get_sync_progress();

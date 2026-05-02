@@ -14,6 +14,8 @@
 #include "bmi160_hal.h"
 #include <Wire.h>
 #include <esp_sleep.h>
+#include "power_manager.h"
+#include "calibration_manager.h"
 
 #define BMI160_ADDR 0x69
 
@@ -141,10 +143,14 @@ bool bmi160_hal_init() {
         writeReg(REG_CMD, 0xB2); // Step Counter Clear
         delay(10); // ✅ kasih waktu lebih — 2ms kadang kurang
         
-        // ✅ Step Conf
-        writeReg(REG_STEP_CONF_0, STEP_CONF_0_VAL);
-        delay(1);
-        writeReg(REG_STEP_CONF_1, STEP_CONF_1_VAL); // bit3=1 → step_cnt_en
+        // Step Counter Configuration
+        uint8_t tune = calibration_get_step_tune();
+        uint8_t sc0 = 0x15, sc1 = 0x03; // Defaults (Tune 1)
+        if (tune == 2) { sc0 = 0x39; sc1 = 0x0B; }
+        else if (tune == 3) { sc0 = 0x21; sc1 = 0x0B; }
+
+        writeReg(REG_STEP_CONF_0, sc0);
+        writeReg(REG_STEP_CONF_1, sc1);
         delay(1);
 
         // ✅ FIX: Switch ke Acc Low Power — step counter BUTUH ini!
@@ -166,12 +172,26 @@ bool bmi160_hal_init() {
         delay(1);
 
         // Any-motion: Threshold (0x60) & Duration (0x5F)
-        // 0x40 threshold (~250mg), 0x03 duration (4 samples)
-        writeReg(REG_INT_ANYMO_DUR,   0x03); 
-        writeReg(REG_INT_ANYMO_THRES, 0x40); 
+        uint8_t wake_thres = calibration_get_wake_threshold();
+        uint8_t wake_dur   = calibration_get_wake_duration();
+        uint8_t wake_axis  = calibration_get_wake_axis();
+
+        writeReg(REG_INT_ANYMO_DUR,   wake_dur & 0x03); 
+        writeReg(REG_INT_ANYMO_THRES, wake_thres);
         delay(1);
 
-        writeReg(REG_INT_EN_0, 0x47); // Any-motion X/Y/Z + Orientation
+        // Orientation config (v8.1)
+        writeReg(0x65, 0x18); // hysteresis + threshold
+        writeReg(0x66, 0x0D); // symmetrical mode
+        delay(1);
+
+        // RTW Mode Selection
+        uint8_t rtw_mode = power_manager_get_rtw_mode();
+        if (rtw_mode == 1) {
+            writeReg(REG_INT_EN_0, 0x40); // Enable Orientation
+        } else {
+            writeReg(REG_INT_EN_0, wake_axis & 0x07); // Enable Any-motion (X/Y/Z)
+        }
         delay(1);
 
         if (Serial) Serial.println("[BMI160] INT1 Configured // [DEBUG]");
@@ -219,7 +239,11 @@ bool bmi160_hal_init() {
     return true;
 }
 void bmi160_hal_shutdown() {
-    writeReg(REG_INT_MAP_0, 0x44); // Re-enable interrupt mapping
+    if (power_manager_get_raise_to_wake()) {
+        writeReg(REG_INT_MAP_0, 0x44); // Re-enable interrupt mapping (Any-Motion)
+    } else {
+        writeReg(REG_INT_MAP_0, 0x00); // Disable interrupt mapping so it doesn't wake
+    }
     delay(1);
     
     writeReg(REG_CMD, 0x14); // Gyro Suspend

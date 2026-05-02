@@ -5,50 +5,60 @@ Dokumen ini berisi rangkuman teknis lengkap mengenai hardware, software, dan fit
 ---
 
 ## 🚀 1. Hardware Specifications
-| Komponen | Spesifikasi | Keterangan |
-| :--- | :--- | :--- |
-| **MCU** | ESP32-C3 RISC-V | 160MHz, WiFi + BLE 5.0 |
-| **Layar** | ST7789 IPS LCD | 1.28", 240x280 (Logic 240x240) |
-| **Motion Sensor**| BMI160 (6-Axis) | Accel & Gyro, High-Precision Pedometer |
-| **Biometric** | MAX30100 | Heart Rate & SpO2 Oximeter |
-| **Penyimpanan** | 4MB Flash | LittleFS untuk Wallpaper & Data |
-| **Power** | Li-Po 3.7V | Terintegrasi Charging (GPIO 0) & ADC (GPIO 3) |
+
+| Komponen          | Spesifikasi     | Keterangan                                    |
+| :---------------- | :-------------- | :-------------------------------------------- |
+| **MCU**           | ESP32-C3 RISC-V | 160MHz, WiFi + BLE 5.0                        |
+| **Layar**         | ST7789 IPS LCD  | 1.28", 240x280 (Logic 240x240)                |
+| **Motion Sensor** | BMI160 (6-Axis) | Accel & Gyro, High-Precision Pedometer        |
+| **Biometric**     | MAX30100        | Heart Rate & SpO2 Oximeter                    |
+| **Penyimpanan**   | 4MB Flash       | LittleFS untuk Wallpaper & Data               |
+| **Power**         | Li-Po 3.7V      | Terintegrasi Charging (GPIO 0) & ADC (GPIO 3) |
 
 ---
 
 ## 🛠️ 2. Core Architecture (Software)
+
 - **Framework**: Arduino ESP32 v2.0.11 (Core 6.4.0).
-- **UI Engine**: `TFT_eSPI` dengan sistem **Unified Shared Architecture (USA)**. Seluruh layar dirender via Sprite untuk menghilangkan *flicker*.
+- **UI Engine**: `TFT_eSPI` dengan sistem **Unified Shared Architecture (USA)**. Seluruh layar dirender via Sprite untuk menghilangkan _flicker_.
 - **I2C Protocol**: Bare-metal murni dengan **Repeated Start** support. Dioptimasi untuk menangani bus collision antara BMI160 dan MAX30100.
 - **Persistence**: Menggunakan **RTC Slow Memory** (`RTC_DATA_ATTR`) agar data langkah dan status jam tidak hilang saat mati daya atau tidur.
 
 ---
 
 ## ✨ 3. Feature Set
+
 ### 🕒 Watchface & Time
+
 - **Dual Mode**: Analog & Digital (Switchable).
 - **Time Sync**: Sinkronisasi waktu presisi via BLE (tm structure).
 - **Midnight Auto-Reset**: Langkah kaki otomatis kembali ke 0 setiap ganti hari (berdasarkan perbandingan `tm_yday`).
 
 ### 🏃 Pedometer (Langkah Kaki)
-- **24/7 Counting**: Sensor tetap menghitung meski jam dalam kondisi *Deep Sleep*.
+
+- **24/7 Counting**: Sensor tetap menghitung meski jam dalam kondisi _Deep Sleep_.
 - **Wrist-Optimized**: Tuning sensitivitas khusus pergelangan tangan (Normal Mode, Buffer 5-langkah).
 - **PCB Flip Correction**: Koreksi sumbu Z perangkat lunak karena sensor dipasang terbalik pada PCB.
 - **Sanity Filter**: Proteksi "Anti-Pecicilan" (mengabaikan lonjakan langkah >500 dalam 500ms).
 
 ### 💓 Health Monitoring
+
 - **Real-time Heart Rate**: Deteksi detak jantung (BPM) instan.
 - **SpO2 Oximeter**: Pengukuran kadar oksigen darah.
 - **Burst Polling**: Pengambilan data sensor 5x per siklus untuk mencegah luapan FIFO saat UI sibuk.
 - **Turbo Rendering**: Mematikan proses wallpaper saat mengukur untuk fokus daya CPU pada sensor.
 
 ### 🔋 Power Management & Wake
+
 - **Deep Sleep**: Konsumsi daya sangat rendah (<100uA).
 - **Wake-on-Motion**: Layar menyala otomatis saat tangan diputar atau diguncang (~250mg threshold).
 - **Wake-on-Button**: Bangun via tombol fisik.
 - **Dynamic Frequency**: Otomatis 80MHz (Hemat) saat standby, 160MHz (Turbo) saat sinkronisasi data.
 
-### 📲 Connectivity (BLE)
+### 📲 Connectivity (BLE v2.1 NimBLE)
+
+- **NimBLE Stack**: Menggunakan stack Bluetooth ultra-ringan (Apache NimBLE) untuk penghematan memori 40% dibanding Bluedroid.
+- **Hardware-Level Toggle**: Memungkinkan mematikan radio Bluetooth secara fisik via menu Settings untuk daya tahan baterai maksimal.
 - **Wallpaper Transfer**: Upload gambar background custom via Bluetooth (Chunked Binary Transfer).
 - **Sensor Streaming**: Mengirim data langkah dan baterai ke aplikasi smartphone.
 - **Control Interface**: Remote control untuk navigasi menu jam via BLE.
@@ -56,32 +66,37 @@ Dokumen ini berisi rangkuman teknis lengkap mengenai hardware, software, dan fit
 ---
 
 ## 🔌 4. Pin Mapping (Pinout)
-| Fungsi | Pin (GPIO) | Keterangan |
-| :--- | :--- | :--- |
-| **LCD MOSI** | 6 | SPI Data |
-| **LCD SCLK** | 4 | SPI Clock |
-| **LCD DC / RST** | 2 / 1 | Data Command / Reset |
-| **LCD Backlight**| 10 | PWM Dimming |
-| **I2C SDA / SCL** | 8 / 9 | Shared Sensor Bus |
-| **Left Button** | 7 | Navigation |
-| **Right Button** | 5 | **SHARED** dengan BMI160 INT1 |
-| **Battery ADC** | 3 | Monitoring Tegangan |
-| **Charge Stat** | 0 | LOW = Charging |
+
+| Fungsi            | Pin (GPIO) | Keterangan                    |
+| :---------------- | :--------- | :---------------------------- |
+| **LCD MOSI**      | 6          | SPI Data                      |
+| **LCD SCLK**      | 4          | SPI Clock                     |
+| **LCD DC / RST**  | 2 / 1      | Data Command / Reset          |
+| **LCD Backlight** | 10         | PWM Dimming                   |
+| **I2C SDA / SCL** | 8 / 9      | Shared Sensor Bus             |
+| **Left Button**   | 7          | Navigation                    |
+| **Right Button**  | 5          | **SHARED** dengan BMI160 INT1 |
+| **Battery ADC**   | 3          | Monitoring Tegangan           |
+| **Charge Stat**   | 0          | LOW = Charging                |
 
 ---
 
 ## 🛡️ 5. Special Logic Implementations
-- **Shared Pin Synergy (GPIO 5)**: Menggunakan mode *Open-Drain* dan *Mapping Suspension* agar BMI160 dan Tombol tidak saling ganggu meski berbagi satu kabel.
-- **Elegant Backlight**: Sistem *Fading In/Out* non-blocking menggunakan task background agar transisi layar terasa premium.
+
+- **Shared Pin Synergy (GPIO 5)**: Menggunakan mode _Open-Drain_ dan _Mapping Suspension_ agar BMI160 dan Tombol tidak saling ganggu meski berbagi satu kabel.
+- **Elegant Backlight**: Sistem _Fading In/Out_ non-blocking menggunakan task background agar transisi layar terasa premium.
 - **Asset Cache**: Sistem proteksi LittleFS agar wallpaper tidak rusak saat transfer terputus di tengah jalan.
 
 ---
 
 ## 🧭 6. UI Navigation & Interactions
+
 Sistem navigasi menggunakan sistem **Circular Slide** (Geser Melingkar).
 
 ### 📑 Menu Order (Urutan Halaman)
+
 Navigasi antar menu menggunakan tombol Klik (Kanan: Maju, Kiri: Mundur):
+
 1.  **Watchface** (Home / Tampilan Utama)
 2.  **Heart Rate** (Menu detak jantung)
 3.  **Screen Timeout** (Menu durasi layar nyala)
@@ -91,21 +106,24 @@ Navigasi antar menu menggunakan tombol Klik (Kanan: Maju, Kiri: Mundur):
 7.  **Brightness** (Menu kecerahan layar)
 8.  **Sync Mode** (Menu pairing BLE)
 9.  **Steps Dash** (Tampilan detail langkah kaki)
-*(Kembali ke Watchface)*
+    _(Kembali ke Watchface)_
 
 ### 🎮 Button Mapping (Fungsi Tombol)
-| Aksi | Tombol Kanan (Right) | Tombol Kiri (Left) |
-| :--- | :--- | :--- |
-| **Klik (Click)** | Menu Selanjutnya / Tambah Nilai (+) | Menu Sebelumnya / Kurang Nilai (-) |
-| **Tahan (Hold)** | **Select / Enter**: Masuk ke fitur, Konfirmasi, atau Start Timer | **Exit / Power**: Keluar ke menu utama atau masuk ke *Deep Sleep* |
-| **Klik 2x (Double)**| Ganti Field (Jam/Menit/Detik pada Timer) | - |
+
+| Aksi                 | Tombol Kanan (Right)                                             | Tombol Kiri (Left)                                                |
+| :------------------- | :--------------------------------------------------------------- | :---------------------------------------------------------------- |
+| **Klik (Click)**     | Menu Selanjutnya / Tambah Nilai (+)                              | Menu Sebelumnya / Kurang Nilai (-)                                |
+| **Tahan (Hold)**     | **Select / Enter**: Masuk ke fitur, Konfirmasi, atau Start Timer | **Exit / Power**: Keluar ke menu utama atau masuk ke _Deep Sleep_ |
+| **Klik 2x (Double)** | Ganti Field (Jam/Menit/Detik pada Timer)                         | -                                                                 |
 
 ---
 
 ## 🧠 7. Brainstorming & Roadmap (Future Implementation)
+
 Rencana pengembangan struktur menu dan fitur baru.
 
 ### 🗺️ Proposed UI Tree (Struktur Menu Baru)
+
 ```text
 Watchface (Home)
     │
@@ -121,14 +139,14 @@ Settings  ← Satu pintu masuk utama
     │
 Brightness
     │
-Steps Dash 
+Steps Dash
 (Kembali ke Watchface)
 ```
 
 ### ⚙️ Settings Sub-Menu Detail
+
 ```text
 Settings
-    ├── Brightness (Slider +/-)
     ├── AOD Config
     │     ├── Toggle: Never Off vs Timed
     │     ├── AOD Brightness Level
@@ -144,8 +162,10 @@ Settings
 ```
 
 ### 🚀 Upcoming Features
+
 - **Fall Detector**: Menggunakan algoritma g-force pada BMI160 untuk mendeteksi jatuh ekstrem.
 - **Improved Settings**: Mengkonsolidasi menu-menu kecil ke dalam satu pintu masuk "Settings" agar navigasi utama lebih ringkas.
 
 ---
-*Generated by Antigravity Master Agent - Smartwatch V3 Project Status.*
+
+_Generated by Antigravity Master Agent - Smartwatch V3 Project Status._

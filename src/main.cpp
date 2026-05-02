@@ -15,9 +15,9 @@ void setup() {
     pinMode(10, OUTPUT);
     digitalWrite(10, LOW);
     
-    // [STABILIZATION] Paling Penting: Beri waktu 2 detik murni untuk Windows
+    // [STABILIZATION] Paling Penting: Beri waktu singkat untuk Windows
     // me-mount driver USB CDC *SEBELUM* ada data dikirim ke Serial
-    delay(2000); 
+    delay(10); 
     
     Serial.begin(115200);
     Serial.setTxTimeoutMs(0); // [FIX] Prevent CDC hang when buffer is full

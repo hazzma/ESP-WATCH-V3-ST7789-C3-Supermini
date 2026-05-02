@@ -1,14 +1,12 @@
 #include "ble_hal.h"
-#include <BLEDevice.h>
-#include <BLEServer.h>
-#include <BLEUtils.h>
-#include <BLE2902.h>
+#include <NimBLEDevice.h>
 #include <time.h>
 #include <sys/time.h>
 #include <LittleFS.h>
 #include "ui_manager.h"
 #include "power_manager.h"
 #include "assets_wallpaper.h" // [GUARD] Cache Control
+#include "calibration_manager.h"
 
 extern bool ble_is_syncing;
 extern bool ble_is_connected;
@@ -22,36 +20,41 @@ extern AppState current_state;
 #define UUID_STEPS             "12345678-1234-1234-1234-123456789004"
 #define UUID_BATTERY           "12345678-1234-1234-1234-123456789005"
 #define UUID_CONTROL           "12345678-1234-1234-1234-123456789006"
+#define UUID_CALIBRATION       "12345678-1234-1234-1234-123456789007"
 
-static BLEServer* pServer = nullptr;
-static BLECharacteristic* pControlChar = nullptr;
-static BLECharacteristic* pHrChar = nullptr;
-static BLECharacteristic* pStepsChar = nullptr;
-static BLECharacteristic* pBatChar = nullptr;
-static BLECharacteristic* pWallChar = nullptr;
+static NimBLEServer* pServer = nullptr;
+static NimBLECharacteristic* pControlChar = nullptr;
+static NimBLECharacteristic* pHrChar = nullptr;
+static NimBLECharacteristic* pStepsChar = nullptr;
+static NimBLECharacteristic* pBatChar = nullptr;
+static NimBLECharacteristic* pWallChar = nullptr;
+static NimBLECharacteristic* pCalChar = nullptr;
 
 static File wallFile;
 static uint32_t expectedSize = 0;
 static uint32_t currentTotalSize = 0;
 static uint16_t nextExpectedChunk = 0; // [SYNC GUARD]
+static bool ble_initialized = false;
 
-class MyServerCallbacks : public BLEServerCallbacks {
-    void onConnect(BLEServer* pServer) {
+class MyServerCallbacks : public NimBLEServerCallbacks {
+    void onConnect(NimBLEServer* pServer) {
         ble_is_connected = true;
         if (Serial) Serial.println("BLE: Connected // [READY]");
     }
-    void onDisconnect(BLEServer* pServer) {
+    void onDisconnect(NimBLEServer* pServer) {
         ble_is_connected = false;
         ble_is_syncing = false;
         if (wallFile) wallFile.close();
-        BLEDevice::startAdvertising();
+        if (power_manager_get_ble_enabled()) {
+            BLEDevice::startAdvertising(); // Resume advertising when disconnected
+        }
         power_manager_set_freq(FREQ_MID);
-        if (Serial) Serial.println("BLE: Connection Lost // [ABORTED]");
+        if (Serial) Serial.println("BLE: Disconnected! // [STATE]");
     }
 };
 
-class TimeSyncCallbacks : public BLECharacteristicCallbacks {
-    void onWrite(BLECharacteristic* pCharacteristic) {
+class TimeSyncCallbacks : public NimBLECharacteristicCallbacks {
+    void onWrite(NimBLECharacteristic* pCharacteristic) {
         std::string value = pCharacteristic->getValue();
         if (value.length() == 8) {
             uint8_t* data = (uint8_t*)value.data();
@@ -77,8 +80,8 @@ class TimeSyncCallbacks : public BLECharacteristicCallbacks {
     }
 };
 
-class WallpaperCallbacks : public BLECharacteristicCallbacks {
-    void onWrite(BLECharacteristic* pCharacteristic) {
+class WallpaperCallbacks : public NimBLECharacteristicCallbacks {
+    void onWrite(NimBLECharacteristic* pCharacteristic) {
         if (!wallFile) return;
         std::string value = pCharacteristic->getValue();
         uint8_t* data = (uint8_t*)value.data();
@@ -116,8 +119,8 @@ class WallpaperCallbacks : public BLECharacteristicCallbacks {
     }
 };
 
-class ControlCallbacks : public BLECharacteristicCallbacks {
-    void onWrite(BLECharacteristic* pCharacteristic) {
+class ControlCallbacks : public NimBLECharacteristicCallbacks {
+    void onWrite(NimBLECharacteristic* pCharacteristic) {
         std::string value = pCharacteristic->getValue();
         if (value.length() > 0) {
             uint8_t cmd = value[0];
@@ -152,40 +155,50 @@ class ControlCallbacks : public BLECharacteristicCallbacks {
             else if (cmd == 0x08) { ui_manager_request_state(STATE_WATCHFACE); } // Stop HR (Return Home)
             else if (cmd == 0x09) { /* Stop Step Streaming Placeholder */ }
             else if (cmd == 0x07) { ESP.restart(); }
+            else if (cmd == 0x0A && value.length() == 15) { 
+                calibration_manager_apply((uint8_t*)value.data() + 1, 14); 
+            }
+            else if (cmd == 0x0B) { 
+                calibration_manager_send_current(); 
+            }
+            else if (cmd == 0x0C) { 
+                calibration_manager_reset(); 
+            }
         }
     }
 };
 
 void ble_hal_init() {
-    BLEDevice::init("ESP32Watch");
-    pServer = BLEDevice::createServer();
+    if (!power_manager_get_ble_enabled()) return;
+    if (ble_initialized) return;
+
+    NimBLEDevice::init("ESP32Watch");
+    pServer = NimBLEDevice::createServer();
     pServer->setCallbacks(new MyServerCallbacks());
-    BLEService* pService = pServer->createService(SERVICE_UUID);
+    NimBLEService* pService = pServer->createService(SERVICE_UUID);
 
-    pService->createCharacteristic(UUID_TIME_SYNC, BLECharacteristic::PROPERTY_WRITE)->setCallbacks(new TimeSyncCallbacks());
+    pService->createCharacteristic(UUID_TIME_SYNC, NIMBLE_PROPERTY::WRITE)->setCallbacks(new TimeSyncCallbacks());
     
-    pControlChar = pService->createCharacteristic(UUID_CONTROL, BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_NOTIFY);
+    pControlChar = pService->createCharacteristic(UUID_CONTROL, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::NOTIFY);
     pControlChar->setCallbacks(new ControlCallbacks());
-    pControlChar->addDescriptor(new BLE2902());
 
-    pHrChar = pService->createCharacteristic(UUID_HR_DATA, BLECharacteristic::PROPERTY_NOTIFY);
-    pHrChar->addDescriptor(new BLE2902());
+    pHrChar = pService->createCharacteristic(UUID_HR_DATA, NIMBLE_PROPERTY::NOTIFY);
 
-    pStepsChar = pService->createCharacteristic(UUID_STEPS, BLECharacteristic::PROPERTY_NOTIFY);
-    pStepsChar->addDescriptor(new BLE2902());
+    pStepsChar = pService->createCharacteristic(UUID_STEPS, NIMBLE_PROPERTY::NOTIFY);
 
-    pBatChar = pService->createCharacteristic(UUID_BATTERY, BLECharacteristic::PROPERTY_NOTIFY);
-    pBatChar->addDescriptor(new BLE2902());
+    pBatChar = pService->createCharacteristic(UUID_BATTERY, NIMBLE_PROPERTY::NOTIFY);
 
-    pWallChar = pService->createCharacteristic(UUID_WALLPAPER, BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_NOTIFY);
+    pWallChar = pService->createCharacteristic(UUID_WALLPAPER, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::NOTIFY);
     pWallChar->setCallbacks(new WallpaperCallbacks());
-    pWallChar->addDescriptor(new BLE2902());
+
+    pCalChar = pService->createCharacteristic(UUID_CALIBRATION, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::NOTIFY);
 
     pService->start();
-    BLEAdvertising* pAdvertising = BLEDevice::getAdvertising();
+    NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
     pAdvertising->addServiceUUID(SERVICE_UUID);
     pAdvertising->setScanResponse(true);
     pAdvertising->start();
+    ble_initialized = true;
     if (Serial) Serial.println("BLE: Connected Architecture v6.3 Online // [READY]");
 }
 
@@ -210,9 +223,31 @@ void ble_hal_notify_battery(uint8_t percent, bool charging) {
     pBatChar->setValue(data, 2); pBatChar->notify();
 }
 
+void ble_hal_notify_calibration(uint8_t* data, size_t len) {
+    if (!ble_is_connected || pCalChar == nullptr) return;
+    pCalChar->setValue(data, len);
+    pCalChar->notify();
+}
+
 float ble_hal_get_sync_progress() {
     if (expectedSize == 0) return 0.0f;
     return (float)currentTotalSize / (float)expectedSize;
 }
 
 void ble_hal_update() {}
+
+void ble_hal_update_enabled() {
+    bool target = power_manager_get_ble_enabled();
+    if (target && !ble_initialized) {
+        ble_hal_init();
+    } else if (target && ble_initialized) {
+        NimBLEDevice::getAdvertising()->start();
+        if (Serial) Serial.println("BLE: Advertising Started // [ON]");
+    } else if (!target && ble_initialized) {
+        NimBLEDevice::deinit(true);
+        ble_initialized = false;
+        ble_is_connected = false;
+        ble_is_syncing = false;
+        if (Serial) Serial.println("BLE: Radio Deinitialized // [OFF]");
+    }
+}

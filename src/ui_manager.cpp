@@ -10,12 +10,16 @@
 #include <sys/time.h>
 #include <time.h>
 #include "ble_hal.h" // [GUARD] Synchronous Data Reporting
+#include "calibration_manager.h"
 
 // States extension (Internal)
 #define STATE_TIMER_ALARM 99 
 
 // Persist - RTC_DATA_ATTR
 static RTC_DATA_ATTR bool aod_allowed = false; 
+static RTC_DATA_ATTR bool aod_timed_mode = false; 
+static RTC_DATA_ATTR uint32_t aod_duration_sec = 30;
+static RTC_DATA_ATTR int brightness_aod_val = 50;
 static RTC_DATA_ATTR int brightness_ui_val = 127; 
 RTC_DATA_ATTR AppState current_state = STATE_WATCHFACE;
 
@@ -56,6 +60,8 @@ static float current_fps = 0;
 static uint32_t draw_count = 0;
 static uint32_t last_fps_time = 0;
 static uint32_t boot_stabilize_counter = 0; // [UI AGENT] Cold Boot Guard
+static int settings_menu_idx = 0; // [UI AGENT] Settings menu selected index
+static int sub_menu_idx = 0;
 
 // Time
 static RTC_DATA_ATTR int clock_h = 10, clock_m = 10, clock_s = 0;
@@ -92,6 +98,9 @@ static const uint16_t BOX_COL = 0x18C3;
 void ui_manager_init() {
     last_activity_time = millis(); 
     
+    calibration_manager_init();
+    power_manager_set_auto_sleep_timeout(calibration_get_screen_timeout());
+
     // [POWER AGENT] Smart Throttling Intuition
     esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
     if (cause == ESP_SLEEP_WAKEUP_UNDEFINED) {
@@ -213,6 +222,7 @@ static void draw_menu_card(TFT_eSprite& spr, AppState st, int x, int y) {
             }
             break;
         }
+        case STATE_MENU_SETTINGS:   title = "SETTINGS";   sub = "[HOLD TO ENTER]"; break;
         case STATE_EXEC_STEPS:      title = "ACTIVITY";   sub = "[STEPS]"; break; 
         default: break;
     }
@@ -326,14 +336,18 @@ void ui_manager_update() {
 
     uint32_t to_ms = power_manager_get_auto_sleep_timeout() * 1000;
     if (to_ms > 0 && (now - last_activity_time > to_ms)) {
-        if (is_dimmed_aod) { }
+        if (is_dimmed_aod) { 
+            if (aod_timed_mode && (now - last_activity_time > to_ms + (aod_duration_sec * 1000))) {
+                power_manager_enter_deep_sleep();
+            }
+        }
         else if (current_state == (AppState)STATE_TIMER_ALARM) {} 
         else if (current_state == STATE_WATCHFACE) {
-            if (aod_allowed) { is_dimmed_aod = true; display_hal_backlight_set(15); last_rendered_state = (AppState)-1; last_min_val = -1; }
+            if (aod_allowed) { is_dimmed_aod = true; display_hal_backlight_set(brightness_aod_val); last_rendered_state = (AppState)-1; last_min_val = -1; }
             else { power_manager_enter_deep_sleep(); }
         } else if (current_state != STATE_EXEC_STOPWATCH && current_state != STATE_EXEC_TIMER && current_state != STATE_EXEC_HR) {
             if (!aod_allowed) power_manager_enter_deep_sleep();
-            else { is_dimmed_aod = true; display_hal_backlight_set(15); current_state = STATE_WATCHFACE; nd = true; }
+            else { is_dimmed_aod = true; display_hal_backlight_set(brightness_aod_val); current_state = STATE_WATCHFACE; nd = true; }
         }
     }
 
@@ -361,16 +375,19 @@ void ui_manager_update() {
         else if (current_state == STATE_SET_TIMER_M) { timer_m = (timer_m + 1) % 60; nd = true; }
         else if (current_state == STATE_SET_TIMER_S) { timer_s = (timer_s + 1) % 60; nd = true; }
         else if (current_state == STATE_EXEC_STOPWATCH) { if (sw_running) { sw_elapsed_ms += (now - sw_start_ms); sw_running = false; } else { sw_start_ms = now; sw_running = true; } nd = true; }
+        else if (current_state == STATE_EXEC_SETTINGS) { settings_menu_idx = (settings_menu_idx + 1) % 4; nd = true; } // 4 items in Settings
+        else if (current_state == STATE_SET_AOD_CONFIG) { sub_menu_idx = (sub_menu_idx + 1) % 3; nd = true; }
+        else if (current_state == STATE_SET_AOD_BRIGHTNESS) { brightness_aod_val += 15; if (brightness_aod_val > 255) brightness_aod_val = 255; nd = true; }
+        else if (current_state == STATE_SET_RAISE2WAKE) { sub_menu_idx = (sub_menu_idx + 1) % 3; nd = true; }
         else if (current_state != STATE_EXEC_HR && current_state != STATE_EXEC_TIMER && (int)current_state != STATE_TIMER_ALARM) {
             d = 1;
-            if (current_state == STATE_WATCHFACE)       target = STATE_MENU_HR;
-            else if (current_state == STATE_MENU_HR)    target = STATE_MENU_TIMEOUT;
-            else if (current_state == STATE_MENU_TIMEOUT) target = STATE_MENU_AOD;
-            else if (current_state == STATE_MENU_AOD)   target = STATE_MENU_TIMER;
+            if (current_state == STATE_WATCHFACE)       target = STATE_MENU_AOD;
+            else if (current_state == STATE_MENU_AOD)   target = STATE_MENU_HR;
+            else if (current_state == STATE_MENU_HR)    target = STATE_MENU_TIMER;
             else if (current_state == STATE_MENU_TIMER) target = STATE_MENU_STOPWATCH;
-            else if (current_state == STATE_MENU_STOPWATCH) target = STATE_MENU_BRIGHTNESS;
-            else if (current_state == STATE_MENU_BRIGHTNESS) target = STATE_MENU_SYNC;
-            else if (current_state == STATE_MENU_SYNC) target = STATE_EXEC_STEPS;
+            else if (current_state == STATE_MENU_STOPWATCH) target = STATE_MENU_SETTINGS;
+            else if (current_state == STATE_MENU_SETTINGS) target = STATE_MENU_BRIGHTNESS;
+            else if (current_state == STATE_MENU_BRIGHTNESS) target = STATE_EXEC_STEPS;
             else if (current_state == STATE_EXEC_STEPS) target = STATE_WATCHFACE;
         }
     } else if (bt == BTN_LEFT_CLICK) {
@@ -380,22 +397,25 @@ void ui_manager_update() {
         else if ((int)current_state == STATE_TIMER_ALARM) { display_hal_backlight_set(brightness_ui_val); target = STATE_MENU_TIMER; } 
         else if (current_state == STATE_SET_BRIGHTNESS) { brightness_ui_val -= 15; if (brightness_ui_val < 0) brightness_ui_val = 0; display_hal_backlight_set(brightness_ui_val); nd = true; }
         else if (current_state == STATE_SET_TIMEOUT) { uint32_t t = power_manager_get_auto_sleep_timeout(); if (t > 5) power_manager_set_auto_sleep_timeout(t - 5); nd = true; }
+        else if (current_state == STATE_SET_AOD_BRIGHTNESS) { brightness_aod_val -= 15; if (brightness_aod_val < 1) brightness_aod_val = 1; nd = true; }
         else if (current_state == STATE_EXEC_STOPWATCH) { sw_running = false; sw_elapsed_ms = 0; nd = true; }
         else if (current_state == STATE_EXEC_HR) { 
             max30100_hal_shutdown(); 
             target = STATE_MENU_HR; 
         }
+        else if (current_state == STATE_EXEC_SETTINGS) { settings_menu_idx--; if (settings_menu_idx < 0) settings_menu_idx = 3; nd = true; }
+        else if (current_state == STATE_SET_AOD_CONFIG) { sub_menu_idx--; if (sub_menu_idx < 0) sub_menu_idx = 2; nd = true; }
+        else if (current_state == STATE_SET_RAISE2WAKE) { sub_menu_idx--; if (sub_menu_idx < 0) sub_menu_idx = 2; nd = true; }
         else if (current_state != STATE_EXEC_HR && current_state != STATE_EXEC_TIMER && (int)current_state != STATE_TIMER_ALARM) {
             d = -1;
             if (current_state == STATE_WATCHFACE)        target = STATE_EXEC_STEPS; 
-            else if (current_state == STATE_MENU_HR)     target = STATE_WATCHFACE;
-            else if (current_state == STATE_MENU_TIMEOUT) target = STATE_MENU_HR;
-            else if (current_state == STATE_MENU_AOD)    target = STATE_MENU_TIMEOUT;
-            else if (current_state == STATE_MENU_TIMER)  target = STATE_MENU_AOD;
+            else if (current_state == STATE_MENU_AOD)    target = STATE_WATCHFACE;
+            else if (current_state == STATE_MENU_HR)     target = STATE_MENU_AOD;
+            else if (current_state == STATE_MENU_TIMER)  target = STATE_MENU_HR;
             else if (current_state == STATE_MENU_STOPWATCH) target = STATE_MENU_TIMER;
-            else if (current_state == STATE_MENU_BRIGHTNESS) target = STATE_MENU_STOPWATCH;
-            else if (current_state == STATE_MENU_SYNC) target = STATE_MENU_BRIGHTNESS;
-            else if (current_state == STATE_EXEC_STEPS) target = STATE_MENU_SYNC;
+            else if (current_state == STATE_MENU_SETTINGS) target = STATE_MENU_STOPWATCH;
+            else if (current_state == STATE_MENU_BRIGHTNESS) target = STATE_MENU_SETTINGS;
+            else if (current_state == STATE_EXEC_STEPS) target = STATE_MENU_BRIGHTNESS;
         }
     } else if (bt == BTN_RIGHT_DOUBLE) {
         if (current_state == STATE_SET_TIMER_H) { target = STATE_SET_TIMER_M; }
@@ -405,8 +425,7 @@ void ui_manager_update() {
         if      (current_state == STATE_EXEC_STEPS) { bmi160_hal_reset_steps(); nd = true; } // Reset ONLY in dash
         else if (current_state == STATE_MENU_HR)    { if (max30100_hal_init()) { target = STATE_EXEC_HR; hr_start_time = millis(); nd = true; } }
         else if (current_state == STATE_EXEC_HR)    { max30100_hal_shutdown(); target = STATE_MENU_HR; }
-        else if (current_state == STATE_MENU_TIMEOUT) target = STATE_SET_TIMEOUT;
-        else if (current_state == STATE_SET_TIMEOUT)  target = STATE_MENU_TIMEOUT;
+        else if (current_state == STATE_SET_TIMEOUT)  target = STATE_EXEC_SETTINGS; // [UI AGENT] Return to settings
         else if (current_state == STATE_MENU_AOD)   { aod_allowed = !aod_allowed; nd = true; }
         else if (current_state == STATE_MENU_BRIGHTNESS) target = STATE_SET_BRIGHTNESS;
         else if (current_state == STATE_SET_BRIGHTNESS)  target = STATE_MENU_BRIGHTNESS;
@@ -416,12 +435,40 @@ void ui_manager_update() {
         else if (current_state == STATE_MENU_STOPWATCH) { if (!sw_running) { sw_start_ms = now; sw_elapsed_ms = 0; sw_running = true; } target = STATE_EXEC_STOPWATCH; }
         else if (current_state == STATE_EXEC_STOPWATCH) { target = STATE_MENU_STOPWATCH; }
         else if (current_state == STATE_MENU_SYNC) { ble_is_syncing = !ble_is_syncing; nd = true; } // [UI AGENT] Toggle Mode
+        else if (current_state == STATE_MENU_SETTINGS) { target = STATE_EXEC_SETTINGS; settings_menu_idx = 0; }
+        else if (current_state == STATE_EXEC_SETTINGS) {
+            // Action inside settings menu
+            if (settings_menu_idx == 0) { target = STATE_SET_AOD_CONFIG; sub_menu_idx = 0; } 
+            else if (settings_menu_idx == 1) { target = STATE_SET_RAISE2WAKE; sub_menu_idx = 0; }
+            else if (settings_menu_idx == 2) { 
+                power_manager_set_ble_enabled(!power_manager_get_ble_enabled());
+                ble_hal_update_enabled();
+                nd = true; 
+            }
+            else if (settings_menu_idx == 3) { target = STATE_SET_TIMEOUT; }
+        }
+        else if (current_state == STATE_SET_AOD_CONFIG) {
+            if (sub_menu_idx == 0) { aod_timed_mode = !aod_timed_mode; nd = true; }
+            else if (sub_menu_idx == 1) { target = STATE_SET_AOD_BRIGHTNESS; }
+            else if (sub_menu_idx == 2 && aod_timed_mode) { aod_duration_sec += 10; if (aod_duration_sec > 120) aod_duration_sec = 10; nd = true; }
+        }
+        else if (current_state == STATE_SET_AOD_BRIGHTNESS) { target = STATE_SET_AOD_CONFIG; }
+        else if (current_state == STATE_SET_RAISE2WAKE) {
+            if (sub_menu_idx == 0) { power_manager_set_raise_to_wake(!power_manager_get_raise_to_wake()); nd = true; }
+            else if (sub_menu_idx == 1) { uint8_t m = power_manager_get_rtw_mode(); m = (m + 1) % 2; power_manager_set_rtw_mode(m); nd = true; }
+            else if (sub_menu_idx == 2) { uint8_t s = power_manager_get_rtw_sensitivity(); s = (s + 1) % 3; power_manager_set_rtw_sensitivity(s); nd = true; }
+        }
     } else if (bt == BTN_LEFT_HOLD) {
         if (current_state >= STATE_SET_TIMER_H && current_state <= STATE_EXEC_TIMER) target = STATE_MENU_TIMER;
         else if (current_state == (int)STATE_TIMER_ALARM) { display_hal_backlight_set(brightness_ui_val); target = STATE_MENU_TIMER; }
         else if (current_state == STATE_EXEC_STOPWATCH) target = STATE_MENU_STOPWATCH;
         else if (current_state == STATE_EXEC_HR) { max30100_hal_shutdown(); target = STATE_MENU_HR; }
         else if (current_state == STATE_SYNCING) target = STATE_MENU_SYNC; // [UI AGENT] Emergency Exit for Testing
+        else if (current_state == STATE_EXEC_SETTINGS) target = STATE_MENU_SETTINGS;
+        else if (current_state == STATE_SET_AOD_BRIGHTNESS) { target = STATE_SET_AOD_CONFIG; }
+        else if (current_state == STATE_SET_AOD_CONFIG || current_state == STATE_SET_RAISE2WAKE) target = STATE_EXEC_SETTINGS;
+        else if (current_state == STATE_MENU_SYNC) target = STATE_EXEC_SETTINGS; // Exit sync to settings
+        else if (current_state == STATE_SET_TIMEOUT) target = STATE_EXEC_SETTINGS; // Exit timeout to settings
         else power_manager_enter_deep_sleep();
     }
 
@@ -457,7 +504,7 @@ static void render_current_state() {
     bool is_full_black_mode = (current_state == STATE_EXEC_HR || current_state == STATE_EXEC_TIMER || current_state == STATE_EXEC_STOPWATCH || (int)current_state == STATE_TIMER_ALARM || (current_state >= STATE_SET_TIMER_H && current_state <= STATE_SET_TIMER_S));
     
     if (sjc && !is_full_black_mode) {
-        if (from_full_black || last_rendered_state == STATE_WATCHFACE || last_rendered_state == (AppState)-1) {
+        if (from_full_black || last_rendered_state == STATE_WATCHFACE || last_rendered_state == STATE_EXEC_SETTINGS || last_rendered_state == STATE_SET_AOD_CONFIG || last_rendered_state == STATE_SET_AOD_BRIGHTNESS || last_rendered_state == STATE_SET_RAISE2WAKE || last_rendered_state == STATE_EXEC_STEPS || last_rendered_state == (AppState)-1) {
             tft.pushImage(0, 0, 240, 280, assets_get_wallpaper()); push_top_clock(true);
         }
     }
@@ -592,6 +639,123 @@ static void render_current_state() {
             draw_menu_card(canvas_spr, STATE_MENU_BRIGHTNESS, 0, 0);
             { int bar_w = (brightness_ui_val * 160) / 255; canvas_spr.drawRoundRect(20, 75, 160, 12, 6, TFT_WHITE); canvas_spr.fillRect(22, 77, 156, 8, BOX_COL); canvas_spr.fillRoundRect(22, 77, bar_w > 4 ? bar_w - 4 : 0, 8, 4, TFT_GREEN); }
             push_sub_sprite(MENU_BX, MENU_BY, MENU_BW, MENU_BH); break;
+        case STATE_EXEC_SETTINGS: {
+            if (last_rendered_state != STATE_EXEC_SETTINGS) {
+                tft.pushImage(0, 0, 240, 280, assets_get_wallpaper());
+                tft.setTextDatum(MC_DATUM); tft.setTextColor(TFT_WHITE); tft.setTextSize(2);
+                tft.drawString("SETTINGS", 120, 30);
+                tft.setTextSize(1); tft.setTextColor(TFT_DARKGREY);
+                tft.drawString("L/R: SCROLL | R-HOLD: ENTER", 120, 250);
+            }
+            canvas_spr.pushImage(0, -60, 240, 280, assets_get_wallpaper());
+            const char* options[] = {"AOD", "Raise2Wake", "BLE / Sync", "Timeout"};
+            for (int i=0; i<4; i++) {
+                int y_pos = 10 + i * 35;
+                if (i == settings_menu_idx) {
+                    canvas_spr.fillRoundRect(20, y_pos, 200, 30, 8, TFT_GOLD);
+                    canvas_spr.setTextColor(TFT_BLACK);
+                } else {
+                    canvas_spr.fillRoundRect(20, y_pos, 200, 30, 8, BOX_COL);
+                    canvas_spr.setTextColor(TFT_WHITE);
+                }
+                canvas_spr.setTextDatum(ML_DATUM); canvas_spr.setTextSize(2);
+                canvas_spr.drawString(options[i], 30, y_pos + 15);
+                
+                canvas_spr.setTextDatum(MR_DATUM);
+                if (i == 0) { canvas_spr.drawString(aod_allowed ? "ON" : "OFF", 210, y_pos + 15); }
+                else if (i == 1) { canvas_spr.drawString(power_manager_get_raise_to_wake() ? "ON" : "OFF", 210, y_pos + 15); }
+                else if (i == 2) { canvas_spr.drawString(power_manager_get_ble_enabled() ? "ON" : "OFF", 210, y_pos + 15); }
+                else if (i == 3) { char buf[8]; sprintf(buf, "%ds", power_manager_get_auto_sleep_timeout()); canvas_spr.drawString(buf, 210, y_pos + 15); }
+            }
+            push_sub_sprite(0, 60, 240, 160);
+            break;
+        }
+        case STATE_SET_AOD_CONFIG: {
+            if (last_rendered_state != STATE_SET_AOD_CONFIG) {
+                tft.pushImage(0, 0, 240, 280, assets_get_wallpaper());
+                tft.setTextDatum(MC_DATUM); tft.setTextColor(TFT_WHITE); tft.setTextSize(2);
+                tft.drawString("AOD CONFIG", 120, 30);
+                tft.setTextSize(1); tft.setTextColor(TFT_DARKGREY);
+                tft.drawString("L-HOLD: BACK | R-HOLD: TOGGLE", 120, 250);
+            }
+            canvas_spr.pushImage(0, -60, 240, 280, assets_get_wallpaper());
+            const char* options[] = {"Mode", "Brightness", "Duration"};
+            for (int i=0; i<3; i++) {
+                int y_pos = 20 + i * 40;
+                if (i == sub_menu_idx) {
+                    canvas_spr.fillRoundRect(20, y_pos, 200, 30, 8, TFT_GOLD);
+                    canvas_spr.setTextColor(TFT_BLACK);
+                } else {
+                    canvas_spr.fillRoundRect(20, y_pos, 200, 30, 8, BOX_COL);
+                    if (i == 2 && !aod_timed_mode) canvas_spr.setTextColor(C_DIM);
+                    else canvas_spr.setTextColor(TFT_WHITE);
+                }
+                canvas_spr.setTextDatum(ML_DATUM); canvas_spr.setTextSize(2);
+                canvas_spr.drawString(options[i], 30, y_pos + 15);
+                
+                canvas_spr.setTextDatum(MR_DATUM);
+                if (i == 0) { canvas_spr.drawString(aod_timed_mode ? "TIMED" : "ALWAYSON", 210, y_pos + 15); }
+                else if (i == 1) { char buf[8]; sprintf(buf, "%d", brightness_aod_val); canvas_spr.drawString(buf, 210, y_pos + 15); }
+                else if (i == 2) { 
+                    if (!aod_timed_mode) canvas_spr.drawString("-", 210, y_pos + 15);
+                    else { char buf[8]; sprintf(buf, "%ds", aod_duration_sec); canvas_spr.drawString(buf, 210, y_pos + 15); }
+                }
+            }
+            push_sub_sprite(0, 60, 240, 160);
+            break;
+        }
+        case STATE_SET_AOD_BRIGHTNESS: {
+            if (last_rendered_state != STATE_SET_AOD_BRIGHTNESS) {
+                tft.pushImage(0, 0, 240, 280, assets_get_wallpaper());
+                tft.setTextDatum(MC_DATUM); tft.setTextColor(TFT_WHITE); tft.setTextSize(2);
+                tft.drawString("AOD BRIGHTNESS", 120, 30);
+                tft.setTextSize(1); tft.setTextColor(TFT_DARKGREY);
+                tft.drawString("L/R: ADJUST | R-HOLD: SAVE", 120, 250);
+            }
+            canvas_spr.pushImage(-MENU_BX, -MENU_BY, 240, 280, assets_get_wallpaper());
+            draw_menu_card(canvas_spr, STATE_MENU_BRIGHTNESS, 0, 0); // Reuse brightness card
+            { 
+                int bar_w = (brightness_aod_val * 160) / 255; 
+                canvas_spr.drawRoundRect(20, 75, 160, 12, 6, TFT_WHITE); 
+                canvas_spr.fillRect(22, 77, 156, 8, BOX_COL); 
+                canvas_spr.fillRoundRect(22, 77, bar_w > 4 ? bar_w - 4 : 0, 8, 4, 0xF96A); // Pinkish red for AOD
+            }
+            push_sub_sprite(MENU_BX, MENU_BY, MENU_BW, MENU_BH);
+            break;
+        }
+        case STATE_SET_RAISE2WAKE: {
+            if (last_rendered_state != STATE_SET_RAISE2WAKE) {
+                tft.pushImage(0, 0, 240, 280, assets_get_wallpaper());
+                tft.setTextDatum(MC_DATUM); tft.setTextColor(TFT_WHITE); tft.setTextSize(2);
+                tft.drawString("RAISE TO WAKE", 120, 30);
+                tft.setTextSize(1); tft.setTextColor(TFT_DARKGREY);
+                tft.drawString("L-HOLD: BACK | R-HOLD: TOGGLE", 120, 250);
+            }
+            canvas_spr.pushImage(0, -60, 240, 280, assets_get_wallpaper());
+            const char* options[] = {"Toggle", "Mode", "Sensitivity"};
+            for (int i=0; i<3; i++) {
+                int y_pos = 10 + i * 45;
+                if (i == sub_menu_idx) {
+                    canvas_spr.fillRoundRect(20, y_pos, 200, 35, 8, TFT_GOLD);
+                    canvas_spr.setTextColor(TFT_BLACK);
+                } else {
+                    canvas_spr.fillRoundRect(20, y_pos, 200, 35, 8, BOX_COL);
+                    canvas_spr.setTextColor(TFT_WHITE);
+                }
+                canvas_spr.setTextDatum(ML_DATUM); canvas_spr.setTextSize(2);
+                canvas_spr.drawString(options[i], 30, y_pos + 17);
+                
+                canvas_spr.setTextDatum(MR_DATUM);
+                if (i == 0) { canvas_spr.drawString(power_manager_get_raise_to_wake() ? "ON" : "OFF", 210, y_pos + 17); }
+                else if (i == 1) { canvas_spr.drawString(power_manager_get_rtw_mode() == 1 ? "TILIT" : "ANYMOV", 210, y_pos + 17); }
+                else if (i == 2) { 
+                    uint8_t s = power_manager_get_rtw_sensitivity();
+                    canvas_spr.drawString(s == 0 ? "HIGH" : (s == 1 ? "MED" : "LOW"), 210, y_pos + 17); 
+                }
+            }
+            push_sub_sprite(0, 60, 240, 160);
+            break;
+        }
         case STATE_EXEC_STEPS:
             {
                 // [POWER AGENT] Smart Shift Guard
@@ -654,7 +818,9 @@ static void render_current_state() {
                     char k_buf[32]; sprintf(k_buf, "%d KCAL", (int)(steps * 0.044f)); 
                     canvas_spr.drawString(k_buf, 30, 215 - 205); // Y=215
                     canvas_spr.setTextDatum(TR_DATUM); 
-                    char m_buf[32]; sprintf(m_buf, "%.1f KM", steps * 0.00075f); 
+                    char m_buf[32]; 
+                    float distance_km = (steps * calibration_calculate_stride()) / 1000000.0f;
+                    sprintf(m_buf, "%.1f KM", distance_km); 
                     canvas_spr.drawString(m_buf, 210, 215 - 205); // Y=215
                     push_sub_sprite(0, 205, 240, 35); 
 

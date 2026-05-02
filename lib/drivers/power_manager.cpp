@@ -146,3 +146,42 @@ void power_manager_set_auto_sleep_timeout(uint32_t seconds) {
 uint32_t power_manager_get_auto_sleep_timeout() {
     return auto_sleep_sec;
 }
+
+static RTC_DATA_ATTR bool rtw_enabled = true;
+static RTC_DATA_ATTR uint8_t rtw_sensitivity = 1; // 0: High, 1: Med, 2: Low
+
+bool power_manager_get_raise_to_wake() {
+    return rtw_enabled;
+}
+
+void power_manager_set_raise_to_wake(bool enabled) {
+    rtw_enabled = enabled;
+}
+
+uint8_t power_manager_get_rtw_sensitivity() {
+    return rtw_sensitivity;
+}
+
+void power_manager_set_rtw_sensitivity(uint8_t level) {
+    rtw_sensitivity = level;
+}
+
+static RTC_DATA_ATTR uint8_t rtw_mode = 0; // 0: Any-Motion, 1: Orientation
+
+uint8_t power_manager_get_rtw_mode() {
+    return rtw_mode;
+}
+
+void power_manager_set_rtw_mode(uint8_t mode) {
+    rtw_mode = mode;
+}
+
+static RTC_DATA_ATTR bool ble_enabled = true;
+
+bool power_manager_get_ble_enabled() {
+    return ble_enabled;
+}
+
+void power_manager_set_ble_enabled(bool enabled) {
+    ble_enabled = enabled;
+}

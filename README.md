@@ -1,4 +1,4 @@
-# ⌚ ESP32-C3 Smartwatch v4 (ST7789) - Checkpoint 4 (HEALTH & POWER)
+# ⌚ ESP32-C3 Smartwatch v6.5 (ST7789) - Checkpoint 5 (NIMBLE BT)
 
 Proyek smartwatch berbasis **ESP32-C3 Super Mini** dengan layar ST7789 (240x280) menggunakan desain UI/UX modern berbasis **Glassmorphism**.
 
@@ -6,7 +6,14 @@ Proyek smartwatch berbasis **ESP32-C3 Super Mini** dengan layar ST7789 (240x280)
 
 ## ⚡ Fitur Utama & Milestones
 
-### 🩺 Checkpoint 4: Health & Power Intelligence (LATEST)
+### 📲 Checkpoint 5: NimBLE Connectivity (LATEST)
+Optimasi besar-besaran pada sektor konektivitas:
+*   **NimBLE Migration**: Migrasi total dari Bluedroid ke NimBLE. Firmware size drop dari **1.3MB ke 840KB**.
+*   **Zero-Freeze Toggle**: Fitur ON/OFF Bluetooth di menu Settings yang 100% stabil tanpa risiko *freeze*.
+*   **Modem Sleep Optimization**: Mematikan radio secara fisik saat BLE OFF untuk penghematan baterai ekstrem.
+*   **Smart Sync UI**: Integrasi toggle BLE langsung di menu Settings tanpa pindah halaman.
+
+### 🩺 Checkpoint 4: Health & Power Intelligence
 Peningkatan drastis pada akurasi pembacaan sensor dan manajemen daya:
 *   **Precision Pedometer**: Integrasi driver **BMI160 Bare-Metal** (SDO High 0x69) dengan sinkronisasi startup 81ms untuk akurasi langkah maksimal.
 *   **Sanwa-Calibrated Battery**: Monitoring tegangan baterai menggunakan `analogReadMilliVolts` dengan pengali presisi **1.418f** (dikalibrasi manual dengan multimeter Sanwa).

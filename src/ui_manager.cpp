@@ -480,10 +480,18 @@ void ui_manager_update() {
 
     // [UI AGENT] Global Sensor Polling: Update steps in all modes
     static uint32_t last_step_poll = 0;
-    if (now - last_step_poll > 500) {
+    
+    // A. Instant Trigger: Check hardware flag every frame
+    if (bmi160_hal_check_step_trigger()) {
+        bmi160_hal_update(); // Force sync now
+        nd = true;           // Trigger redraw
+        last_step_poll = now;
+    } 
+    // B. Fallback Poll: Every 500ms just in case
+    else if (now - last_step_poll > 500) {
         uint32_t old_steps = bmi160_hal_get_steps();
         bmi160_hal_update();
-        if (bmi160_hal_get_steps() != old_steps) nd = true; // Trigger redraw on step change
+        if (bmi160_hal_get_steps() != old_steps) nd = true; 
         last_step_poll = now;
     }
 

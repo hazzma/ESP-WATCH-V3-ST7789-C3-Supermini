@@ -29,6 +29,7 @@
 #define REG_STEP_CONF_0  0x7A
 #define REG_STEP_CONF_1  0x7B
 #define REG_INT_EN_0     0x50
+#define REG_INT_EN_2     0x52  // Step detector interrupt enable
 #define REG_INT_OUT_CTRL 0x53
 #define REG_INT_LATCH    0x54
 #define REG_INT_MAP_0    0x55
@@ -196,6 +197,8 @@ bool bmi160_hal_init() {
         // Disable mapping saat awake (anti ghost button)
         writeReg(REG_INT_MAP_0, 0x00);
         delay(1);
+        writeReg(REG_INT_EN_2, 0x08); // Enable Step Detector Interrupt (Hardware level)
+        delay(1);
         uint8_t _clr = readReg(0x1C); // clear interrupt dengan cara baca status
 (void)_clr; // ✅ Clear latched interrupt so GPIO 5 is released!
 
@@ -211,6 +214,8 @@ bool bmi160_hal_init() {
         delay(4);
 
         writeReg(REG_INT_MAP_0, 0x00);
+        delay(1);
+        writeReg(REG_INT_EN_2, 0x08); // Re-enable Step Detector on wake
         delay(1);
         writeReg(REG_CMD, 0x0A); // ✅ Clear latched interrupt on wake path
 
@@ -245,6 +250,8 @@ void bmi160_hal_shutdown() {
     delay(1);
     
     writeReg(REG_CMD, 0x14); // Gyro Suspend
+    delay(1);
+    writeReg(REG_INT_EN_2, 0x00); // ✅ Disable Step Detector in sleep to save power
     delay(1);
     // ✅ Acc sudah di Low Power dari init, tidak perlu tulis 0x12 lagi
     // tapi tulis lagi tidak masalah sebagai safety
@@ -292,6 +299,12 @@ void bmi160_hal_update() {
 
 uint32_t bmi160_hal_get_steps() {
     return total_steps;
+}
+
+bool bmi160_hal_check_step_trigger() {
+    // Read INT_STATUS_0 (0x1C). Bit 0 is step_int.
+    uint8_t status = readReg(0x1C);
+    return (status & 0x01) != 0;
 }
 
 bool bmi160_hal_was_motion_wake() {

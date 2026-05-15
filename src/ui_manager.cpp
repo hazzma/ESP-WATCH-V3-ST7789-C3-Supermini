@@ -231,6 +231,8 @@ static void draw_menu_card(TFT_eSprite& spr, AppState st, int x, int y) {
     if (st == STATE_EXEC_STEPS) {
         spr.drawCircle(x + MENU_BW/2, y + MENU_BH/2 + 20, 35, 0x18C3); 
         spr.drawString(title, x + MENU_BW/2, y + 15);
+        char s_buf[16]; sprintf(s_buf, "%d", bmi160_hal_get_steps());
+        spr.setTextSize(2); spr.drawString(s_buf, x + MENU_BW/2, y + MENU_BH/2 + 20);
     } else if (strlen(title) > 0) {
         spr.drawString(title, x + MENU_BW/2, y + (is_set ? 20 : MENU_BH/2 - 5));
     }
@@ -474,6 +476,15 @@ void ui_manager_update() {
         else if (current_state == STATE_MENU_SYNC) target = STATE_EXEC_SETTINGS; // Exit sync to settings
         else if (current_state == STATE_SET_TIMEOUT) target = STATE_EXEC_SETTINGS; // Exit timeout to settings
         else power_manager_enter_deep_sleep();
+    }
+
+    // [UI AGENT] Global Sensor Polling: Update steps in all modes
+    static uint32_t last_step_poll = 0;
+    if (now - last_step_poll > 500) {
+        uint32_t old_steps = bmi160_hal_get_steps();
+        bmi160_hal_update();
+        if (bmi160_hal_get_steps() != old_steps) nd = true; // Trigger redraw on step change
+        last_step_poll = now;
     }
 
     if (target != current_state) {
@@ -792,9 +803,7 @@ static void render_current_state() {
                     step_warmup_timer = millis(); 
                 }
                 
-                // 2. CONTINUOUS POLLING (v7.2)
-                static uint32_t last_poll_t = 0;
-                if (millis() - last_poll_t > 500) { bmi160_hal_update(); last_poll_t = millis(); }
+                // 2. CONTINUOUS DATA (v7.3: Global poll handles update)
                 uint32_t steps = bmi160_hal_get_steps();
 
                 uint32_t goal = 10000;
